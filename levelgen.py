@@ -1,11 +1,27 @@
-"""Procedural level generation — chunk-based."""
+"""Procedural level generation — chunk-based with fBm terrain."""
 import math
 import random
 import pygame
 
+from noise_terrain import (
+    build_surface_heights,
+    ceiling_strip_heights,
+    fbm2d,
+    make_generators,
+    surface_y_at,
+    terrain_seed,
+)
+
 W, H = 960, 540
 CHUNK_W = 960
 GROUND_H = 48
+
+TERRAIN_STEP = 16
+TERRAIN_MAX_SLOPE = 16
+TERRAIN_HEIGHT_SNAP = 16
+GROUND_VARIATION_AMP = 48.0
+PIT_FLOOR_Y = H - 385
+MAX_JUMP = 120
 
 # Pipe colors (duplicated here to avoid circular import)
 PIPE_GREEN = (34, 177, 76)
@@ -77,90 +93,107 @@ def generate_level(dimension, level_num):
     """Returns (blocks, coins, pipes, flag_x, world_width)."""
     num_chunks = 8 + level_num
     world_w = num_chunks * CHUNK_W
-    gt = H - GROUND_H  # ground top
+    gt = H - GROUND_H
+
+    seed = terrain_seed(dimension, level_num)
+    rng = random.Random(seed)
+    ground_gen, pit_gen, plat_gen, ceil_gen = make_generators(seed)
+
+    heights, col_solid = build_surface_heights(
+        world_w,
+        TERRAIN_STEP,
+        float(gt),
+        GROUND_VARIATION_AMP,
+        TERRAIN_MAX_SLOPE,
+        CHUNK_W,
+        float(PIT_FLOOR_Y),
+        TERRAIN_HEIGHT_SNAP,
+        ground_gen,
+        pit_gen,
+        level_num,
+    )
 
     blocks = []
+    for i, solid in enumerate(col_solid):
+        if not solid:
+            continue
+        x = i * TERRAIN_STEP
+        top = int(heights[i])
+        blocks.append(pygame.Rect(x, top, TERRAIN_STEP, H - top))
+
+    if dimension == "underworld":
+        ceil_depths = ceiling_strip_heights(world_w, TERRAIN_STEP, ceil_gen)
+        for i, ch in enumerate(ceil_depths):
+            x = i * TERRAIN_STEP
+            h = int(max(16, min(ch, 38)))
+            blocks.append(pygame.Rect(x, 0, TERRAIN_STEP, h))
+
     coins = []
     pipes = []
-
-    # Collect teleport pipe spots to pair them up later
     tp_spots = []
 
     for ci in range(num_chunks):
         x0 = ci * CHUNK_W
 
-        # --- Ground (with occasional pits) ---
-        if ci == 0 or ci >= num_chunks - 1:
-            blocks.append(pygame.Rect(x0, gt, CHUNK_W, GROUND_H))
-        else:
-            pit_chance = min(0.3 + level_num * 0.03, 0.5)
-            if random.random() < pit_chance:
-                gs = random.randint(200, CHUNK_W - 280)
-                gw = random.randint(80, min(100 + level_num * 8, 180))
-                if gs > 0:
-                    blocks.append(pygame.Rect(x0, gt, gs, GROUND_H))
-                ax = x0 + gs + gw
-                aw = CHUNK_W - gs - gw
-                if aw > 0:
-                    blocks.append(pygame.Rect(ax, gt, aw, GROUND_H))
-            else:
-                blocks.append(pygame.Rect(x0, gt, CHUNK_W, GROUND_H))
+        def sy(px):
+            return surface_y_at(
+                float(px), heights, TERRAIN_STEP, world_w, float(gt), CHUNK_W)
 
-        # --- Platforms (reachable staircase) ---
-        # Max jump height is ~150px, so each platform must be within
-        # ~120px vertically of the ground or another platform.
-        MAX_JUMP = 120
+        # --- Platforms (reachable; heights follow fBm) ---
         chunk_plats = []
-        num_plats = random.randint(2, 4)
-        # Start from ground level and step upward
-        prev_y = gt  # ground top
+        num_plats = rng.randint(2, 4)
+        anchor = sy(x0 + CHUNK_W // 2)
+        prev_y = anchor
         for j in range(num_plats):
-            px = x0 + int(CHUNK_W * (j + 0.5) / (num_plats + 1))
-            px += random.randint(-60, 60)
+            t = (j + 0.5) / (num_plats + 1)
+            px = x0 + int(CHUNK_W * t)
+            px += rng.randint(-55, 55)
             px = max(x0 + 20, min(px, x0 + CHUNK_W - 160))
-            # Step up from previous surface, but keep it reachable
-            step = random.randint(60, MAX_JUMP)
-            py = prev_y - step
-            py = max(H - 420, min(py, gt - 60))  # clamp
-            pw = random.randint(80, 160)
+            base_g = sy(float(px))
+            ph = fbm2d(
+                plat_gen,
+                px * 0.0031,
+                ci * 0.17 + j * 0.09,
+                octaves=3,
+                persistence=0.52,
+                lacunarity=2.0,
+            )
+            span = int(62 + (ph + 1) * 0.5 * (MAX_JUMP - 64))
+            span = max(58, min(span, MAX_JUMP))
+            py = prev_y - span
+            py = int(max(H - 415, min(py, base_g - 38)))
+            pw = rng.randint(80, 160)
             plat = pygame.Rect(px, py, pw, 24)
             blocks.append(plat)
             chunk_plats.append(plat)
-            # Next platform can step from this one or reset to ground
-            if random.random() < 0.5:
-                prev_y = py  # build higher
+            if rng.random() < 0.5:
+                prev_y = float(py)
             else:
-                prev_y = gt  # reset to ground level
+                prev_y = sy(float(px))
 
-        # --- Coins (placed above platforms so they're reachable) ---
+        # --- Coins ---
         for plat in chunk_plats:
-            if random.random() < 0.6:
+            if rng.random() < 0.58:
                 cx = plat.x + plat.w // 2
-                cy = plat.y - 40
-                coins.append({"pos": [cx, cy], "taken": False,
+                coins.append({"pos": [cx, plat.y - 40], "taken": False,
                               "dim": dimension})
-        # Extra ground-level coins
-        if random.random() < 0.4:
-            cx = x0 + random.randint(80, CHUNK_W - 80)
-            coins.append({"pos": [cx, gt - 50], "taken": False,
+        if rng.random() < 0.42:
+            cx = x0 + rng.randint(80, CHUNK_W - 80)
+            gy = sy(float(cx))
+            coins.append({"pos": [cx, int(gy) - 50], "taken": False,
                           "dim": dimension})
-
-        # --- Underworld ceiling ---
-        if dimension == "underworld":
-            blocks.append(pygame.Rect(x0, 0, CHUNK_W, 24))
 
         # --- Pipes ---
         if 1 < ci < num_chunks - 1:
             if ci % 3 == 1:
-                px = x0 + random.randint(100, CHUNK_W - 150)
-                tp_spots.append((px, gt - 64))
+                px = x0 + rng.randint(100, CHUNK_W - 150)
+                tp_spots.append((px, sy(float(px)) - Pipe.PIPE_H))
             if ci == num_chunks // 2:
                 px = x0 + CHUNK_W // 2
-                pipes.append(Pipe(px, gt - 64, "dimension", dimension,
-                                  900 + level_num))
+                pipes.append(Pipe(px, sy(float(px)) - Pipe.PIPE_H,
+                                  "dimension", dimension, 900 + level_num))
 
-    # Pair up teleport spots
-    random.shuffle(tp_spots)
+    rng.shuffle(tp_spots)
     pid = 0
     for i in range(0, len(tp_spots) - 1, 2):
         pipes.append(Pipe(tp_spots[i][0], tp_spots[i][1],

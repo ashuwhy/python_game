@@ -23,6 +23,8 @@ MOVE_SPEED = 7
 FRICTION = 0.82
 GROUND_H = 48
 PLAYER_W, PLAYER_H = 38, 54
+MAX_TERRAIN_STEP_UP = 17
+MAX_TERRAIN_SNAP_DOWN = 18
 
 # ─── colors ──────────────────────────────────────────────────
 SKY = (107, 140, 255)
@@ -268,6 +270,42 @@ def play_level_intro(screen, clock, level_num):
         clock.tick(30)
 
 
+def is_ceiling_block(block):
+    return block.y <= 1 and block.bottom < H // 2
+
+
+def is_ground_block(block):
+    return not is_ceiling_block(block) and block.bottom >= H - 8
+
+
+def try_step_up(player, blocks, climb_px):
+    old_y = player.y
+    for climb in range(1, climb_px + 1):
+        player.y = old_y - climb
+        if not any(player.colliderect(block) for block in blocks):
+            return True
+    player.y = old_y
+    return False
+
+
+def try_snap_down(player, blocks, snap_px):
+    foot_left = player.left + 6
+    foot_right = player.right - 6
+    best_top = None
+    for block in blocks:
+        if is_ceiling_block(block):
+            continue
+        if foot_right <= block.left or foot_left >= block.right:
+            continue
+        gap = block.top - player.bottom
+        if 0 <= gap <= snap_px and (best_top is None or block.top < best_top):
+            best_top = block.top
+    if best_top is None:
+        return False
+    player.bottom = best_top
+    return True
+
+
 # ─── main ────────────────────────────────────────────────────
 
 def main():
@@ -401,6 +439,9 @@ def main():
         player.x += int(vel_x)
         for b in blocks:
             if player.colliderect(b):
+                if (on_ground and is_ground_block(b)
+                        and try_step_up(player, blocks, MAX_TERRAIN_STEP_UP)):
+                    continue
                 if vel_x > 0:
                     player.right = b.left
                 elif vel_x < 0:
@@ -423,6 +464,11 @@ def main():
                 elif vel_y < 0:
                     player.top = b.bottom
                     vel_y = 0
+
+        if (not on_ground and was_on_ground and vel_y >= 0
+                and try_snap_down(player, blocks, MAX_TERRAIN_SNAP_DOWN)):
+            vel_y = 0
+            on_ground = True
 
         # ---- walking dust ----
         if on_ground and abs(vel_x) > 3 and frame % 8 == 0:
@@ -527,8 +573,8 @@ def main():
         for b in blocks:
             if not cam.visible(b):
                 continue
-            is_ground = b.y >= H - 60
-            is_ceiling = b.y <= 1
+            is_ceiling = is_ceiling_block(b)
+            is_ground = is_ground_block(b)
             if is_ground or is_ceiling:
                 draw_ground(screen, b, dimension, cam)
             else:
