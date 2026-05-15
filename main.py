@@ -1,6 +1,6 @@
 """
 Mini Mario — pygame platformer with procedural levels & animated Mario.
-Arrows / A-D: move · Space / W / Up: jump · Down: pipe · R: restart · Esc: quit
+Arrows / A-D: move · Space / W / Up: jump · Down: pipe · B: shop · F11: fullscreen · R: new run · Shift+R: wipe save · Esc: quit
 """
 
 import sys
@@ -13,6 +13,8 @@ from camera import Camera
 from particles import Particle, spawn_dust, spawn_land_puff
 from levelgen import generate_level
 from mario_sprite import draw_mario, get_anim_state
+from save import load_state, save_state, wipe_save_file
+from shop import derive_stats, run_shop
 
 # ─── constants ───────────────────────────────────────────────
 W, H = 960, 540
@@ -213,7 +215,7 @@ def draw_flag(surface, flag_x, cam):
 
 # ─── transitions ─────────────────────────────────────────────
 
-def play_warp_transition(screen, clock, dimension_entering):
+def play_warp_transition(screen, clock, dimension_entering, present_fn):
     for i in range(30):
         t = i / 29.0
         if dimension_entering == "underworld":
@@ -234,25 +236,25 @@ def play_warp_transition(screen, clock, dimension_entering):
         ox = max(8, (W - bitmap_text_width(msg, scale=4)) // 2)
         draw_bitmap_text(screen, msg, ox, H // 2 - 10, (255, 255, 255),
                          scale=4)
-        pygame.display.flip()
+        present_fn()
         clock.tick(30)
     screen.fill((255, 255, 255))
-    pygame.display.flip()
+    present_fn()
     pygame.time.delay(80)
 
 
-def play_teleport_flash(screen, clock):
+def play_teleport_flash(screen, clock, present_fn):
     for i in range(10):
         t = i / 9.0
         alpha = int(200 * (1 - t))
         overlay = pygame.Surface((W, H), pygame.SRCALPHA)
         overlay.fill((100, 255, 100, alpha))
         screen.blit(overlay, (0, 0))
-        pygame.display.flip()
+        present_fn()
         clock.tick(40)
 
 
-def play_level_intro(screen, clock, level_num):
+def play_level_intro(screen, clock, level_num, present_fn):
     """Show level number before starting."""
     for i in range(60):
         t = i / 59.0
@@ -266,7 +268,7 @@ def play_level_intro(screen, clock, level_num):
         sub = "GET READY!"
         sox = max(8, (W - bitmap_text_width(sub, scale=3)) // 2)
         draw_bitmap_text(screen, sub, sox, H // 2 + 30, col, scale=3)
-        pygame.display.flip()
+        present_fn()
         clock.tick(30)
 
 
@@ -310,24 +312,45 @@ def try_snap_down(player, blocks, snap_px):
 
 def main():
     pygame.init()
-    screen = pygame.display.set_mode((W, H))
+    fullscreen = True
+    window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     pygame.display.set_caption("Mini Mario — Procedural Levels")
+    screen = pygame.Surface((W, H))
     clock = pygame.time.Clock()
+
+    def present():
+        ww, wh = window.get_size()
+        scale = max(1, min(ww // W, wh // H))
+        sw, sh = W * scale, H * scale
+        scaled = pygame.transform.scale(screen, (sw, sh))
+        window.fill((0, 0, 0))
+        window.blit(scaled, ((ww - sw) // 2, (wh - sh) // 2))
+        pygame.display.flip()
+
+    progress = load_state()
+    stats = derive_stats(progress["upgrades"])
+
+    def flush_save():
+        save_state(progress)
 
     cam = Camera()
     particles = []
     level_num = 1
     dimension = "overworld"
+    blocks = []
+    coins = []
+    pipes = []
+    flag_x = 0
+    world_w = W
+    breakable_ids = set()
 
     def new_level():
-        nonlocal blocks, coins, pipes, flag_x, world_w
-        blocks, coins, pipes, flag_x, world_w = generate_level(
-            dimension, level_num)
-        # Also pre-generate underworld coins
-        _, uw_coins, _, _, _ = generate_level("underworld", level_num)
+        nonlocal blocks, coins, pipes, flag_x, world_w, breakable_ids
+        blocks, coins, pipes, flag_x, world_w, breakable_ids = (
+            generate_level(dimension, level_num))
+        _, uw_coins, _, _, _, _ = generate_level("underworld", level_num)
         coins.extend(uw_coins)
 
-    blocks, coins, pipes, flag_x, world_w = [], [], [], 0, W
     new_level()
 
     player = pygame.Rect(80, H - 200, PLAYER_W, PLAYER_H)
@@ -335,44 +358,78 @@ def main():
     on_ground = False
     was_on_ground = False
     facing_right = True
-    score = 0
     won = False
     frame = 0
     warp_cooldown = 0
     death_timer = 0
     anim_state = "idle"
 
-    play_level_intro(screen, clock, level_num)
+    play_level_intro(screen, clock, level_num, present)
 
     while True:
         frame += 1
         if warp_cooldown > 0:
             warp_cooldown -= 1
 
-        # ---- events ----
+        move_cap = stats.move_speed
+        jump_v = stats.jump_v
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                flush_save()
                 pygame.quit()
                 sys.exit(0)
+            if event.type == pygame.VIDEORESIZE and not fullscreen:
+                window = pygame.display.set_mode(event.size, pygame.RESIZABLE)
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
+                    flush_save()
                     pygame.quit()
                     sys.exit(0)
+                if event.key == pygame.K_F11:
+                    fullscreen = not fullscreen
+                    if fullscreen:
+                        window = pygame.display.set_mode(
+                            (0, 0), pygame.FULLSCREEN)
+                    else:
+                        window = pygame.display.set_mode(
+                            (W * 2, H * 2), pygame.RESIZABLE)
+                mods = pygame.key.get_mods()
+                is_shift = bool(mods & pygame.KMOD_SHIFT)
                 if event.key == pygame.K_r:
-                    level_num = 1
-                    dimension = "overworld"
-                    new_level()
-                    player.topleft = (80, H - 200)
-                    vel_x = vel_y = 0
-                    score = 0
-                    won = False
-                    death_timer = 0
-                    warp_cooldown = 0
-                    cam.x = 0
-                    particles.clear()
-                    play_level_intro(screen, clock, level_num)
+                    if is_shift:
+                        wipe_save_file()
+                        progress = load_state()
+                        stats = derive_stats(progress["upgrades"])
+                        level_num = 1
+                        dimension = "overworld"
+                        new_level()
+                        player.topleft = (80, H - 200)
+                        vel_x = vel_y = 0
+                        won = False
+                        death_timer = 0
+                        warp_cooldown = 0
+                        cam.x = 0
+                        particles.clear()
+                        play_level_intro(screen, clock, level_num, present)
+                    else:
+                        level_num = 1
+                        dimension = "overworld"
+                        new_level()
+                        player.topleft = (80, H - 200)
+                        vel_x = vel_y = 0
+                        won = False
+                        death_timer = 0
+                        warp_cooldown = 0
+                        cam.x = 0
+                        particles.clear()
+                        play_level_intro(screen, clock, level_num, present)
+                if event.key == pygame.K_b:
+                    run_shop(screen, clock, progress, draw_bitmap_text,
+                             bitmap_text_width, present, W, H, FPS,
+                             flush_save)
+                    stats = derive_stats(progress["upgrades"])
 
-        # ---- death (fell off screen) ----
         if player.top > H + 50:
             death_timer += 1
             if death_timer > 30:
@@ -382,30 +439,30 @@ def main():
                 death_timer = 0
                 warp_cooldown = 0
                 particles.clear()
-            # Still draw the death fade
             screen.fill((0, 0, 0))
             msg = "OOPS!"
             ox = max(8, (W - bitmap_text_width(msg, scale=4)) // 2)
             draw_bitmap_text(screen, msg, ox, H // 2 - 10, (255, 80, 80),
                              scale=4)
-            pygame.display.flip()
+            present()
             clock.tick(FPS)
             continue
 
-        # ---- win: advance level ----
         if won:
             won = False
             level_num += 1
+            if level_num > progress["best_level"]:
+                progress["best_level"] = level_num
+            flush_save()
             dimension = "overworld"
             new_level()
             player.topleft = (80, H - 200)
             vel_x = vel_y = 0
             cam.x = 0
             particles.clear()
-            play_level_intro(screen, clock, level_num)
+            play_level_intro(screen, clock, level_num, present)
             continue
 
-        # ---- input ----
         keys = pygame.key.get_pressed()
         ax = 0
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
@@ -415,7 +472,6 @@ def main():
             ax += 1
             facing_right = True
 
-        # Detect skidding (moving one way, pressing the other)
         skidding = (on_ground and
                     ((vel_x > 2 and ax < 0) or (vel_x < -2 and ax > 0)))
 
@@ -423,19 +479,18 @@ def main():
         vel_x *= FRICTION
         if abs(vel_x) < 0.05:
             vel_x = 0
-        vel_x = max(-MOVE_SPEED, min(MOVE_SPEED, vel_x))
+        vel_x = max(-move_cap, min(move_cap, vel_x))
 
         jump_pressed = (keys[pygame.K_SPACE] or keys[pygame.K_w]
                         or keys[pygame.K_UP])
         if jump_pressed and on_ground:
-            vel_y = JUMP_V
+            vel_y = jump_v
             on_ground = False
             spawn_dust(particles, player.centerx, player.bottom,
                        count=5, color=(180, 160, 130))
 
         vel_y += GRAVITY
 
-        # ---- horizontal collision ----
         player.x += int(vel_x)
         for b in blocks:
             if player.colliderect(b):
@@ -448,20 +503,33 @@ def main():
                     player.left = b.right
                 vel_x = 0
 
-        # ---- vertical collision ----
         was_on_ground = on_ground
         player.y += int(vel_y)
         on_ground = False
-        for b in blocks:
-            if player.colliderect(b):
-                if vel_y > 0:
-                    player.bottom = b.top
-                    if not was_on_ground and vel_y > 4:
-                        spawn_land_puff(particles, player.centerx,
-                                        player.bottom, count=8)
-                    vel_y = 0
-                    on_ground = True
-                elif vel_y < 0:
+        for b in list(blocks):
+            if not player.colliderect(b):
+                continue
+            if vel_y > 0:
+                player.bottom = b.top
+                if not was_on_ground and vel_y > 4:
+                    spawn_land_puff(particles, player.centerx,
+                                    player.bottom, count=8)
+                vel_y = 0
+                on_ground = True
+            elif vel_y < 0:
+                if stats.can_break_bricks and id(b) in breakable_ids:
+                    breakable_ids.discard(id(b))
+                    blocks.remove(b)
+                    progress["coins"] += 1
+                    flush_save()
+                    cx, cy = b.centerx, b.centery
+                    for _ in range(10):
+                        particles.append(Particle(
+                            cx, cy,
+                            random.uniform(-4, 4), random.uniform(-5, -1),
+                            (180, 90, 40), random.randint(12, 22)))
+                    vel_y = 2
+                else:
                     player.top = b.bottom
                     vel_y = 0
 
@@ -470,15 +538,12 @@ def main():
             vel_y = 0
             on_ground = True
 
-        # ---- walking dust ----
         if on_ground and abs(vel_x) > 3 and frame % 8 == 0:
             spawn_dust(particles, player.centerx, player.bottom,
                        count=2, color=(160, 140, 110))
 
-        # ---- animation state ----
         anim_state = get_anim_state(vel_x, vel_y, on_ground, skidding)
 
-        # ---- pipe warp ----
         down_pressed = keys[pygame.K_DOWN] or keys[pygame.K_s]
         if down_pressed and on_ground and warp_cooldown == 0:
             for pipe in pipes:
@@ -492,7 +557,7 @@ def main():
                                     and p.dimension == dimension]
                         if partners:
                             dest = partners[0]
-                            play_teleport_flash(screen, clock)
+                            play_teleport_flash(screen, clock, present)
                             player.midbottom = (
                                 dest.x + dest.PIPE_W // 2, dest.y)
                             vel_x = vel_y = 0
@@ -501,18 +566,15 @@ def main():
                     elif pipe.kind == "dimension":
                         new_dim = ("underworld" if dimension == "overworld"
                                    else "overworld")
-                        play_warp_transition(screen, clock, new_dim)
+                        play_warp_transition(screen, clock, new_dim, present)
                         dimension = new_dim
-                        # Regenerate level for new dimension
-                        blocks_new, coins_new, pipes_new, fx, ww = \
-                            generate_level(new_dim, level_num)
+                        (blocks_new, coins_new, pipes_new, fx, ww,
+                         breakable_new) = generate_level(new_dim, level_num)
                         blocks = blocks_new
-                        # Merge coins (keep taken status for current dim)
+                        breakable_ids = breakable_new
                         old_coins = [c for c in coins if c["dim"] != new_dim]
                         coins = old_coins + coins_new
                         pipes = pipes_new
-                        # Also need pipes from the original dimension for
-                        # when we come back, but generate_level handles that
                         world_w = ww
                         flag_x = fx
                         dim_pipes = [p for p in pipes
@@ -529,7 +591,21 @@ def main():
                         cam.x = max(0, player.centerx - W // 3)
                         break
 
-        # ---- coins ----
+        mag = stats.coin_magnet_px
+        if mag > 0:
+            mx, my = player.centerx, player.centery
+            for c in coins:
+                if c["taken"] or c["dim"] != dimension:
+                    continue
+                cx, cy = c["pos"]
+                dx = mx - cx
+                dy = my - cy
+                dist = math.hypot(dx, dy)
+                if 2 < dist < mag:
+                    pull = 7.0
+                    c["pos"][0] += dx / dist * pull
+                    c["pos"][1] += dy / dist * pull * 0.35
+
         for c in coins:
             if c["taken"] or c["dim"] != dimension:
                 continue
@@ -537,39 +613,32 @@ def main():
             coin_rect = pygame.Rect(cx - 12, cy - 12, 24, 24)
             if player.colliderect(coin_rect):
                 c["taken"] = True
-                score += 100
-                # Coin collect sparkle
+                progress["coins"] += 1
+                flush_save()
                 for _ in range(6):
                     particles.append(Particle(
                         cx, cy,
                         random.uniform(-3, 3), random.uniform(-4, -1),
                         (255, 215, 0), random.randint(10, 20)))
 
-        # ---- flag ----
         if dimension == "overworld":
             pole_rect = pygame.Rect(flag_x, H - 400, 16, H - (H - 400) - 48)
             if player.colliderect(pole_rect):
                 won = True
 
-        # ---- keep in bounds ----
         if player.left < 0:
             player.left = 0
         if player.right > world_w:
             player.right = world_w
 
-        # ---- camera ----
         cam.update(player, world_w)
-
-        # ---- update particles ----
         particles[:] = [p for p in particles if p.update()]
 
-        # ============= DRAW =============
         sky = SKY if dimension == "overworld" else UW_SKY
         screen.fill(sky)
 
         draw_bg_particles(screen, frame, dimension)
 
-        # blocks
         for b in blocks:
             if not cam.visible(b):
                 continue
@@ -580,36 +649,30 @@ def main():
             else:
                 draw_brick(screen, b, dimension, cam)
 
-        # pipes
         for pipe in pipes:
             if pipe.dimension == dimension:
                 pipe.draw(screen, frame, cam.x)
 
-        # flag
         if dimension == "overworld":
             draw_flag(screen, flag_x, cam)
 
-        # coins
         for c in coins:
             if not c["taken"] and c["dim"] == dimension:
                 draw_coin(screen, c["pos"], frame, dimension, cam)
 
-        # mario (drawn in screen coords)
         mario_screen = cam.screen_rect(player)
         draw_mario(screen, mario_screen, facing_right, anim_state, frame)
 
-        # particles
         for p in particles:
             p.draw(screen, cam.x)
 
-        # ---- HUD ----
-        # Semi-transparent HUD background
         hud_bg = pygame.Surface((W, 36), pygame.SRCALPHA)
         hud_bg.fill((0, 0, 0, 80))
         screen.blit(hud_bg, (0, 0))
 
-        draw_bitmap_text(screen, f"COINS: {score}", 16, 12,
-                         (255, 255, 255), scale=3)
+        draw_bitmap_text(
+            screen, f"COINS: {progress['coins']}", 16, 12,
+            (255, 255, 255), scale=3)
 
         lvl_text = f"LEVEL {level_num}"
         lw = bitmap_text_width(lvl_text, scale=3)
@@ -623,17 +686,18 @@ def main():
         draw_bitmap_text(screen, dim_label, W - dim_w - 16, 14,
                          dim_color, scale=2)
 
-        # Controls hint at bottom
         hint_bg = pygame.Surface((W, 28), pygame.SRCALPHA)
         hint_bg.fill((0, 0, 0, 60))
         screen.blit(hint_bg, (0, H - 28))
         draw_bitmap_text(
             screen,
-            "ARROWS MOVE * SPACE JUMP * DOWN PIPE * R RESTART",
+            "MOVE * JUMP * PIPE * B SHOP * F11 FULL * R RUN * SHIFT+R RESET",
             16, H - 24, (200, 200, 200), scale=2)
 
-        pygame.display.flip()
+        present()
         clock.tick(FPS)
+
+
 
 
 if __name__ == "__main__":

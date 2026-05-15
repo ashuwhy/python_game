@@ -15,6 +15,7 @@ from noise_terrain import (
 W, H = 960, 540
 CHUNK_W = 960
 GROUND_H = 48
+MAX_CHUNKS = 24
 
 TERRAIN_STEP = 16
 TERRAIN_MAX_SLOPE = 16
@@ -90,8 +91,8 @@ class Pipe:
 
 
 def generate_level(dimension, level_num):
-    """Returns (blocks, coins, pipes, flag_x, world_width)."""
-    num_chunks = 8 + level_num
+    """Returns (blocks, coins, pipes, flag_x, world_width, breakable_ids)."""
+    num_chunks = min(MAX_CHUNKS, 8 + level_num)
     world_w = num_chunks * CHUNK_W
     gt = H - GROUND_H
 
@@ -114,6 +115,7 @@ def generate_level(dimension, level_num):
     )
 
     blocks = []
+    breakable_ids: set[int] = set()
     for i, solid in enumerate(col_solid):
         if not solid:
             continue
@@ -165,6 +167,7 @@ def generate_level(dimension, level_num):
             pw = rng.randint(80, 160)
             plat = pygame.Rect(px, py, pw, 24)
             blocks.append(plat)
+            breakable_ids.add(id(plat))
             chunk_plats.append(plat)
             if rng.random() < 0.5:
                 prev_y = float(py)
@@ -203,4 +206,4 @@ def generate_level(dimension, level_num):
         pid += 1
 
     flag_x = world_w - 120
-    return blocks, coins, pipes, flag_x, world_w
+    return blocks, coins, pipes, flag_x, world_w, breakable_ids

@@ -55,7 +55,7 @@ def build_surface_heights(
     """Per-column ground top Y and whether solid exists (False = pit air)."""
     n = world_w // step + 2
     heights: list[float] = []
-    pit_thresh = -0.42 + min(level_num * 0.028, 0.14)
+    pit_thresh = -0.42 + min(level_num * 0.018, 0.38)
 
     for i in range(n):
         x = i * step
