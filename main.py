@@ -14,6 +14,7 @@ from particles import Particle, spawn_dust, spawn_land_puff
 from levelgen import generate_level
 from mario_sprite import draw_mario, get_anim_state
 from save import load_state, save_state, wipe_save_file
+from textures import get_texture, draw_tiled
 from shop import derive_stats, run_shop
 
 # ─── constants ───────────────────────────────────────────────
@@ -21,7 +22,7 @@ W, H = 960, 540
 FPS = 60
 GRAVITY = 0.65
 JUMP_V = -14
-MOVE_SPEED = 7
+MOVE_SPEED = 8 
 FRICTION = 0.82
 GROUND_H = 48
 PLAYER_W, PLAYER_H = 38, 54
@@ -120,54 +121,35 @@ def draw_brick(surface, rect, dimension, cam):
     sr = cam.screen_rect(rect)
     if sr.right < -10 or sr.left > W + 10:
         return
-    if dimension == "overworld":
-        col, col_d = BRICK, BRICK_DARK
-    else:
-        col, col_d = UW_BRICK, UW_BRICK_DARK
-    pygame.draw.rect(surface, col, sr)
-    pygame.draw.rect(surface, col_d, sr, 2)
-    seg = 24
-    for cx in range(sr.x + seg, sr.x + sr.w, seg):
-        pygame.draw.line(surface, col_d, (cx, sr.y), (cx, sr.y + sr.h), 1)
+    tex_name = "overworld_brick" if dimension == "overworld" else "underworld_brick"
+    tex = get_texture(tex_name)
+    draw_tiled(surface, tex, sr)
 
 
 def draw_ground(surface, rect, dimension, cam):
     sr = cam.screen_rect(rect)
     if sr.right < -10 or sr.left > W + 10:
         return
-    if dimension == "overworld":
-        col, bord = GROUND_COL, GROUND_BORDER
-    else:
-        col, bord = UW_GROUND, UW_GROUND_BORDER
-    pygame.draw.rect(surface, col, sr)
-    pygame.draw.rect(surface, bord, sr, 3)
-    # Grass tufts on top
-    if dimension == "overworld" and rect.y >= H - 60:
-        for gx in range(sr.x, sr.x + sr.w, 18):
-            pygame.draw.arc(surface, (50, 180, 50),
-                            (gx, sr.y - 4, 14, 8), 0, math.pi, 2)
+    tex_name = "overworld_ground" if dimension == "overworld" else "underworld_ground"
+    tex = get_texture(tex_name)
+    draw_tiled(surface, tex, sr)
 
 
 def draw_coin(surface, pos, t, dimension, cam):
     sx = cam.wx(pos[0])
     if sx < -20 or sx > W + 20:
         return
-    phase = (t // 4) % 4
-    rx = 10 if phase in (0, 2) else 4
-    if dimension == "overworld":
-        gold, dark = COIN_GOLD, (200, 170, 0)
-    else:
-        gold, dark = UW_COIN_GOLD, (120, 50, 180)
-    cy = pos[1]
-    # Floating bob
-    cy += int(math.sin(t * 0.05 + pos[0] * 0.01) * 3)
-    pygame.draw.ellipse(surface, gold,
-                        pygame.Rect(sx - rx, cy - 12, rx * 2, 24))
-    pygame.draw.ellipse(surface, dark,
-                        pygame.Rect(sx - rx, cy - 12, rx * 2, 24), 2)
-    # Sparkle
-    if t % 30 < 5:
-        pygame.draw.circle(surface, (255, 255, 255), (sx + 5, cy - 8), 2)
+    
+    phase = (t // 8) % 4
+    if phase == 0: tex_name = "coin_1"
+    elif phase == 1: tex_name = "coin_2"
+    elif phase == 2: tex_name = "coin_3"
+    else: tex_name = "coin_2"
+    
+    tex = get_texture(tex_name)
+    if tex:
+        cy = pos[1] + int(math.sin(t * 0.05 + pos[0] * 0.01) * 3)
+        surface.blit(tex, (sx - 12, cy - 16))
 
 
 def draw_bg_particles(surface, frame, dimension):
@@ -195,22 +177,17 @@ def draw_flag(surface, flag_x, cam):
     if sx < -60 or sx > W + 60:
         return
     flag_y = H - 400
-    # Pole
-    pygame.draw.rect(surface, FLAG_POLE_COL, (sx, flag_y, 8, H - flag_y - 48))
-    # Ball on top
-    pygame.draw.circle(surface, (255, 215, 0), (sx + 4, flag_y - 4), 6)
-    # Flag
-    pygame.draw.polygon(surface, (0, 180, 0), [
-        (sx + 8, flag_y + 10),
-        (sx + 8, flag_y + 45),
-        (sx + 52, flag_y + 27),
-    ])
-    # Flag border
-    pygame.draw.polygon(surface, (0, 120, 0), [
-        (sx + 8, flag_y + 10),
-        (sx + 8, flag_y + 45),
-        (sx + 52, flag_y + 27),
-    ], 2)
+    pole_rect = pygame.Rect(sx, flag_y, 16, H - flag_y - 48)
+    pole_tex = get_texture("flag_pole")
+    draw_tiled(surface, pole_tex, pole_rect)
+    
+    top_tex = get_texture("flag_top")
+    if top_tex:
+        surface.blit(top_tex, (sx - 8, flag_y - 24))
+    
+    flag_tex = get_texture("flag")
+    if flag_tex:
+        surface.blit(flag_tex, (sx + 8, flag_y + 8))
 
 
 # ─── transitions ─────────────────────────────────────────────
@@ -231,7 +208,7 @@ def play_warp_transition(screen, clock, dimension_entering, present_fn):
         if radius > 0:
             pygame.draw.circle(screen, (0, 0, 0), (W // 2, H // 2), radius + 4)
             pygame.draw.circle(screen, (r, g, b), (W // 2, H // 2), radius)
-        msg = ("WARPING..." if dimension_entering == "underworld"
+        msg = ("WORPING" if dimension_entering == "underworld"
                else "RETURNING...")
         ox = max(8, (W - bitmap_text_width(msg, scale=4)) // 2)
         draw_bitmap_text(screen, msg, ox, H // 2 - 10, (255, 255, 255),

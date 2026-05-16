@@ -3,6 +3,7 @@ import math
 import random
 import pygame
 
+from textures import get_texture, draw_tiled, draw_gradient_pipe
 from noise_terrain import (
     build_surface_heights,
     ceiling_strip_heights,
@@ -53,25 +54,11 @@ class Pipe:
         if sx < -self.PIPE_W - 20 or sx > W + 20:
             return
         is_dim = self.kind == "dimension"
-        base = PIPE_PURPLE if is_dim else PIPE_GREEN
-        dark = PIPE_PURPLE_DARK if is_dim else PIPE_GREEN_DARK
-        lip = PIPE_PURPLE_LIP if is_dim else PIPE_GREEN_LIP
 
-        # body
-        body = pygame.Rect(sx + 6, self.y + self.LIP_H,
-                           self.PIPE_W - 12, self.PIPE_H - self.LIP_H)
-        pygame.draw.rect(surface, base, body)
-        pygame.draw.rect(surface, dark, body, 2)
-        stripe = pygame.Rect(sx + 12, self.y + self.LIP_H + 2,
-                             6, self.PIPE_H - self.LIP_H - 4)
-        pygame.draw.rect(surface, lip, stripe)
-
-        # lip
+        body_rect = pygame.Rect(sx + 6, self.y + self.LIP_H, self.PIPE_W - 12, self.PIPE_H - self.LIP_H)
         lip_rect = pygame.Rect(sx, self.y, self.PIPE_W, self.LIP_H)
-        pygame.draw.rect(surface, base, lip_rect, border_radius=4)
-        pygame.draw.rect(surface, dark, lip_rect, 2, border_radius=4)
-        pygame.draw.rect(surface, lip,
-                         pygame.Rect(sx + 4, self.y + 3, 8, self.LIP_H - 6))
+        draw_gradient_pipe(surface, body_rect, is_dim, False)
+        draw_gradient_pipe(surface, lip_rect, is_dim, True)
 
         # glow for dimension pipes
         if is_dim:
