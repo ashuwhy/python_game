@@ -27,14 +27,14 @@ W, H = INTERNAL_W, INTERNAL_H
 
 # ── Color Palette ───────────────────────────────────────────────
 BLACK       = (0, 0, 0)
-SKY_TOP     = (6, 6, 14)
-SKY_BOT     = (20, 18, 35)
-BLD_FAR     = (16, 16, 26)
-BLD_MID     = (11, 11, 20)
-BLD_NEAR    = (6, 6, 12)
-PLAT_FILL   = (18, 20, 32)
-PLAT_EDGE   = (45, 50, 75)
-PLAT_BOTTOM = (10, 10, 18)
+SKY_TOP     = (18, 6, 8)
+SKY_BOT     = (45, 15, 10)
+BLD_FAR     = (25, 12, 12)
+BLD_MID     = (20, 8, 8)
+BLD_NEAR    = (12, 4, 4)
+PLAT_FILL   = (22, 14, 18)
+PLAT_EDGE   = (55, 30, 35)
+PLAT_BOTTOM = (10, 5, 5)
 
 # Darker Robot Colors
 ROBO        = (32, 36, 50)
@@ -46,10 +46,10 @@ EYE_GLOW_C  = (0, 70, 110)
 SOLAR_COL   = (255, 255, 170)
 DUST_COL    = (55, 50, 45)
 SPARK_COL   = (0, 190, 235)
-FOG_COL     = (12, 12, 22)
-RAIN_COL    = (80, 80, 120)
-WIN_DIM     = (30, 26, 16)
-WIN_BRIGHT  = (50, 44, 25)
+FOG_COL     = (22, 10, 6)
+RAIN_COL    = (255, 120, 40)
+WIN_DIM     = (60, 20, 0)
+WIN_BRIGHT  = (255, 80, 0)
 
 _particle_cache = {}
 
@@ -118,19 +118,20 @@ class Particle:
             self.alpha = max(0, int(50 * t))
         return self.life > 0
 
-    def draw(self, surface):
+    def draw(self, surface, ox=0):
         if self.alpha <= 0 or self.size <= 0:
             return
+        rx = int(self.x - ox)
         if self.kind == "rain":
             end_y = int(self.y + self.vy * 0.5)
             line_col = (*self.color, self.alpha)
             rain_s = pygame.Surface((4, abs(end_y - int(self.y)) + 2), pygame.SRCALPHA)
             pygame.draw.line(rain_s, line_col, (2, 0), (2, abs(end_y - int(self.y))), 1)
-            surface.blit(rain_s, (int(self.x), int(self.y)))
+            surface.blit(rain_s, (rx, int(self.y)))
         else:
             col = (*self.color, min(255, self.alpha))
             surf = _get_circle_surf(self.size, col)
-            surface.blit(surf, (int(self.x) - self.size, int(self.y) - self.size))
+            surface.blit(surf, (rx - self.size, int(self.y) - self.size))
 
 # ── New Game Objects ────────────────────────────────────────────
 
@@ -307,6 +308,27 @@ class Robot:
         self.scale_x = 1.0
         self.scale_y = 1.0
         self.was_on_ground = False
+        self.carried = None  # currently held box
+
+    def try_pickup(self, boxes):
+        """Toggle carrying the nearest box. Called on E keydown."""
+        if self.carried is not None:
+            # Drop it — release just in front
+            self.carried.vy = 0
+            self.carried.vx = 0
+            self.carried = None
+        else:
+            best = None
+            best_dist = 40
+            for b in boxes:
+                dx = abs(b.rect.centerx - self.rect.centerx)
+                dy = abs(b.rect.centery - self.rect.centery)
+                d = dx + dy
+                if d < best_dist:
+                    best_dist = d
+                    best = b
+            if best:
+                self.carried = best
 
     @property
     def rect(self):
@@ -420,8 +442,9 @@ class Robot:
                     self.y = float(r.y)
                     self.vy = 0
 
-    def update(self, platforms, particles, shake, boxes, gates):
+    def update(self, platforms, particles, shake, boxes, gates, world_w=None):
         if not self.awake: return shake
+        if world_w is None: world_w = W
 
         keys = pygame.key.get_pressed()
         target = 0
@@ -443,10 +466,20 @@ class Robot:
 
         self.vy += self.gravity
 
-        self.move_x(self.vx, platforms, boxes, gates)
-        self.move_y(self.vy, platforms, boxes, gates, particles, shake)
+        # Don't collide with carried box
+        active_boxes = [b for b in boxes if b is not self.carried]
+        self.move_x(self.vx, platforms, active_boxes, gates)
+        self.move_y(self.vy, platforms, active_boxes, gates, particles, shake)
 
-        self.x = max(0, min(self.x, W - self.w))
+        # Clamp to world
+        self.x = max(0, min(self.x, world_w - self.w))
+
+        # Keep carried box glued above head
+        if self.carried is not None:
+            self.carried.x = self.x + self.w / 2 - self.carried.w / 2
+            self.carried.y = self.y - self.carried.h - 2
+            self.carried.vy = 0
+            self.carried.vx = 0
 
         self.scale_x += (1.0 - self.scale_x) * 0.15
         self.scale_y += (1.0 - self.scale_y) * 0.15
@@ -465,8 +498,10 @@ class Robot:
 
         return shake
 
-    def draw(self, surface):
-        cx = self.x + self.w / 2
+    def draw(self, surface, ox=0):
+        # ox = camera x offset
+        rx_world = self.x - ox  # screen x
+        cx = rx_world + self.w / 2
         bot = self.y + self.h
         draw_w = int(self.w * self.scale_x)
         draw_h = int(self.h * self.scale_y)
@@ -482,6 +517,29 @@ class Robot:
         pygame.draw.ellipse(shadow_surf, (0, 0, 0, 35), (0, 0, shadow_w * 2, 6))
         surface.blit(shadow_surf, (int(cx - shadow_w), int(bot)))
 
+        # Draw carried box above head
+        if self.carried is not None:
+            bx = int(cx - self.carried.w / 2)
+            by = ry - self.carried.h - 4
+            pygame.draw.rect(surface, (55, 58, 72), (bx, by, self.carried.w, self.carried.h))
+            pygame.draw.rect(surface, (100, 105, 125), (bx, by, self.carried.w, self.carried.h), 2)
+            pygame.draw.line(surface, (100, 105, 125), (bx, by), (bx + self.carried.w, by + self.carried.h), 1)
+            pygame.draw.line(surface, (100, 105, 125), (bx + self.carried.w, by), (bx, by + self.carried.h), 1)
+            # Arms stretch up
+            pygame.draw.rect(surface, ROBO_DARK, (rx + int(-2*sx), ry + int((12+breathe)*sy), int(5*sx), int(20*sy)))
+            pygame.draw.rect(surface, ROBO_DARK, (rx + int(21*sx), ry + int((12+breathe)*sy), int(5*sx), int(20*sy)))
+            # Tiny hands gripping the box
+            pygame.draw.rect(surface, ROBO_HI, (rx + int(-4*sx), ry - 6, int(8*sx), int(8*sy)))
+            pygame.draw.rect(surface, ROBO_HI, (rx + int(20*sx), ry - 6, int(8*sx), int(8*sy)))
+        else:
+            arm_swing = math.sin(self.walk_timer * 3) * 3 if abs(self.vx) > 0.5 else 0
+            la = pygame.Rect(rx + int(-2*sx), ry + int((14 - arm_swing + breathe)*sy), int(5*sx), int(14*sy))
+            ra = pygame.Rect(rx + int(21*sx), ry + int((14 + arm_swing + breathe)*sy), int(5*sx), int(14*sy))
+            pygame.draw.rect(surface, ROBO_DARK, la)
+            pygame.draw.rect(surface, ROBO_DARK, ra)
+            pygame.draw.rect(surface, ROBO_HI, la, 1)
+            pygame.draw.rect(surface, ROBO_HI, ra, 1)
+
         leg_anim = math.sin(self.walk_timer * 3) * 4 if abs(self.vx) > 0.5 else 0
         lleg = pygame.Rect(rx + int(4*sx), ry + int((28+breathe)*sy), int(6*sx), int((10 + leg_anim)*sy))
         rleg = pygame.Rect(rx + int(14*sx), ry + int((28+breathe)*sy), int(6*sx), int((10 - leg_anim)*sy))
@@ -493,14 +551,6 @@ class Robot:
         pygame.draw.rect(surface, ROBO_HI, body, 1)
         chest_y = ry + int((18+breathe)*sy)
         pygame.draw.line(surface, ROBO_DARK, (rx + int(5*sx), chest_y), (rx + int(19*sx), chest_y), 1)
-
-        arm_swing = math.sin(self.walk_timer * 3) * 3 if abs(self.vx) > 0.5 else 0
-        la = pygame.Rect(rx + int(-2*sx), ry + int((14 - arm_swing + breathe)*sy), int(5*sx), int(14*sy))
-        ra = pygame.Rect(rx + int(21*sx), ry + int((14 + arm_swing + breathe)*sy), int(5*sx), int(14*sy))
-        pygame.draw.rect(surface, ROBO_DARK, la)
-        pygame.draw.rect(surface, ROBO_DARK, ra)
-        pygame.draw.rect(surface, ROBO_HI, la, 1)
-        pygame.draw.rect(surface, ROBO_HI, ra, 1)
 
         head = pygame.Rect(rx + int(3*sx), ry + int(breathe*sy), int(18*sx), int(13*sy))
         pygame.draw.rect(surface, ROBO, head)
@@ -519,11 +569,11 @@ class Robot:
         if self.awake and self.eye_brightness > 0:
             ex = rx + int(14*sx) if self.facing_right else rx + int(5*sx)
             ey = ry + int((4+breathe)*sy)
-            gs = int(14 * self.eye_brightness)
-            if gs > 0:
-                gsurf = pygame.Surface((gs*2, gs*2), pygame.SRCALPHA)
-                pygame.draw.circle(gsurf, (*EYE_GLOW_C, int(35*self.eye_brightness)), (gs, gs), gs)
-                surface.blit(gsurf, (ex - gs + 3, ey - gs + 2))
+            gs_r = int(14 * self.eye_brightness)
+            if gs_r > 0:
+                gsurf = pygame.Surface((gs_r*2, gs_r*2), pygame.SRCALPHA)
+                pygame.draw.circle(gsurf, (*EYE_GLOW_C, int(35*self.eye_brightness)), (gs_r, gs_r), gs_r)
+                surface.blit(gsurf, (ex - gs_r + 3, ey - gs_r + 2))
             ea = int(255 * self.eye_brightness)
             esurf = pygame.Surface((5, 4), pygame.SRCALPHA)
             esurf.fill((*EYE_COL, ea))
@@ -544,8 +594,8 @@ class Platform:
         surface.blit(self.surf, self.rect.topleft)
 
 # ── City Background ─────────────────────────────
-def build_city_surface():
-    surf = pygame.Surface((W, H), pygame.SRCALPHA)
+def build_city_surface(width):
+    surf = pygame.Surface((width, H), pygame.SRCALPHA)
     layers = [
         (BLD_FAR,  -20, 60, 160, 220, 480, 5, 25,  WIN_DIM,   0.25),
         (BLD_MID,  -10, 50, 130, 160, 380, 10, 45,  WIN_DIM,   0.20),
@@ -553,7 +603,7 @@ def build_city_surface():
     ]
     for color, start_x, min_w, max_w, min_h, max_h, min_gap, max_gap, win_col, win_chance in layers:
         x = start_x
-        while x < W + 50:
+        while x < width + 50:
             bw = random.randint(min_w, max_w)
             bh = random.randint(min_h, max_h)
             by = H - bh
@@ -600,124 +650,166 @@ def build_scanline_overlay():
 # Max horizontal air travel ≈ 152px, safe gap ≈ 120px
 # Ground top is at H-50 (y=490). Robot spawns standing on ground.
 
-GND = H - 50  # ground top y
+GND = H - 50  # y of ground surface
+
+# Physics reference: jump_power=-9.5, gravity=0.48, speed=3.8
+# Max height ~94px (safe: 75px). Max air reach ~152px (safe: 115px).
+# [E] = pick up / drop box   [SPACE/W] = jump   [ARROWS/WASD] = move
 
 LEVELS = [
     {
-        "name": "first steps",
-        "hint": "reach the portal. jump across.",
+        "name": "carry on",
+        "hint": "[e] pick up / drop box. get it to the plate.",
+        "world_w": 1400,
         "robot": (60, GND - 36),
-        "exit": (880, GND),
+        "exit": (1340, GND),
         "platforms": [
-            (0, GND, 220, 70),
-            (300, GND - 50, 130, 14),
-            (500, GND - 30, 100, 14),
-            (670, GND - 70, 110, 14),
-            (820, GND, 140, 70),
-        ],
-        "switches": [],
-        "gates": [],
-        "boxes": []
-    },
-    {
-        "name": "the switch",
-        "hint": "push the box onto the plate to hold the gate open.",
-        "robot": (60, GND - 36),
-        "exit": (860, GND),
-        "platforms": [
-            (0, GND, 960, 70),
+            (0,    GND, 400, 70),          # left ground
+            (490,  GND - 65, 120, 14),     # middle platform
+            (700,  GND, 700, 70),          # right ground
         ],
         "switches": [
-            {"x": 350, "y": GND - 8, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"}
+            {"x": 750, "y": GND - 8, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"}
         ],
         "gates": [
-            {"x": 550, "y": GND - 80, "w": 16, "h": 80, "id": 1}
+            {"x": 900, "y": GND - 80, "w": 16, "h": 80, "id": 1}
         ],
         "boxes": [
-            (150, GND)
+            (180, GND)
         ]
     },
     {
-        "name": "deadweight",
-        "hint": "the button only works while you stand on it. use the box.",
+        "name": "high ground",
+        "hint": "plate is elevated. carry the box up.",
+        "world_w": 1600,
         "robot": (60, GND - 36),
-        "exit": (860, GND),
+        "exit": (1530, GND),
         "platforms": [
-            (0, GND, 960, 70),
-            (300, GND - 70, 130, 14),
+            (0,    GND, 300, 70),
+            (390,  GND - 65, 130, 14),
+            (600,  GND - 130, 130, 14),
+            (800,  GND, 760, 70),
         ],
         "switches": [
-            {"x": 340, "y": GND - 80, "w": 40, "h": 10, "id": 1, "timed": 0, "type": "button"}
+            {"x": 645, "y": GND - 138, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"}
         ],
         "gates": [
-            {"x": 600, "y": GND - 80, "w": 16, "h": 80, "id": 1}
+            {"x": 1050, "y": GND - 80, "w": 16, "h": 80, "id": 1}
         ],
         "boxes": [
-            (150, GND)
+            (120, GND)
         ]
     },
     {
-        "name": "twin locks",
-        "hint": "box on plate. you on button. both gates open.",
+        "name": "logistics",
+        "hint": "two gates. two plates. plan your route.",
+        "world_w": 2000,
         "robot": (60, GND - 36),
-        "exit": (900, GND),
+        "exit": (1940, GND),
         "platforms": [
-            (0, GND, 960, 70),
-            (420, GND - 70, 120, 14),
-            (250, GND - 70, 100, 14),
+            (0,    GND, 400, 70),
+            (490,  GND - 65, 120, 14),
+            (700,  GND, 500, 70),
+            (1290, GND - 65, 120, 14),
+            (1500, GND, 500, 70),
         ],
         "switches": [
-            {"x": 270, "y": GND - 8, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"},
-            {"x": 450, "y": GND - 80, "w": 40, "h": 10, "id": 2, "timed": 0, "type": "button"},
+            {"x": 750, "y": GND - 8, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"},
+            {"x": 1550, "y": GND - 8, "w": 44, "h": 8, "id": 2, "timed": 0, "type": "plate"},
         ],
         "gates": [
-            {"x": 620, "y": GND - 80, "w": 16, "h": 80, "id": 1},
-            {"x": 650, "y": GND - 80, "w": 16, "h": 80, "id": 2},
+            {"x": 1200, "y": GND - 80, "w": 16, "h": 80, "id": 1},
+            {"x": 1750, "y": GND - 80, "w": 16, "h": 80, "id": 2},
         ],
         "boxes": [
-            (100, GND)
+            (150, GND),
+            (220, GND)
+        ]
+    },
+    {
+        "name": "sequencer",
+        "hint": "you need the box on the far side. think first.",
+        "world_w": 2400,
+        "robot": (60, GND - 36),
+        "exit": (2340, GND),
+        "platforms": [
+            (0,    GND, 350, 70),
+            (440,  GND - 65, 110, 14),
+            (640,  GND, 400, 70),
+            (1130, GND - 65, 110, 14),
+            (1330, GND - 130, 110, 14),
+            (1530, GND, 870, 70),
+        ],
+        "switches": [
+            {"x": 680, "y": GND - 8, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"},
+            {"x": 1370, "y": GND - 138, "w": 44, "h": 8, "id": 2, "timed": 0, "type": "plate"},
+        ],
+        "gates": [
+            {"x": 1040, "y": GND - 80, "w": 16, "h": 80, "id": 1},
+            {"x": 1840, "y": GND - 80, "w": 16, "h": 80, "id": 2},
+        ],
+        "boxes": [
+            (150, GND),
+            (250, GND)
         ]
     },
     {
         "name": "countdown",
-        "hint": "hit the timed switch. then run.",
+        "hint": "timed button. carry the box. reach plate before gate closes.",
+        "world_w": 2800,
         "robot": (60, GND - 36),
-        "exit": (890, GND),
+        "exit": (2740, GND),
         "platforms": [
-            (0, GND, 300, 70),
-            (100, GND - 70, 110, 14),
-            (370, GND - 40, 100, 14),
-            (530, GND, 430, 70),
+            (0,    GND, 400, 70),
+            (100,  GND - 65, 110, 14),
+            (490,  GND - 65, 110, 14),
+            (690,  GND, 500, 70),
+            (1280, GND - 65, 110, 14),
+            (1480, GND, 1320, 70),
         ],
         "switches": [
-            {"x": 120, "y": GND - 80, "w": 40, "h": 10, "id": 1, "timed": 270, "type": "button"},
+            {"x": 120, "y": GND - 73, "w": 40, "h": 10, "id": 1, "timed": 360, "type": "button"},
+            {"x": 1520, "y": GND - 8, "w": 44, "h": 8, "id": 2, "timed": 0, "type": "plate"},
         ],
         "gates": [
-            {"x": 750, "y": GND - 80, "w": 16, "h": 80, "id": 1}
+            {"x": 1000, "y": GND - 80, "w": 16, "h": 80, "id": 1},
+            {"x": 2100, "y": GND - 80, "w": 16, "h": 80, "id": 2},
         ],
-        "boxes": []
+        "boxes": [
+            (200, GND)
+        ]
     },
     {
         "name": "the gauntlet",
-        "hint": "everything you've learned. good luck.",
+        "hint": "everything. no hints. figure it out.",
+        "world_w": 3600,
         "robot": (60, GND - 36),
-        "exit": (900, GND),
+        "exit": (3540, GND),
         "platforms": [
-            (0, GND, 350, 70),
-            (200, GND - 70, 100, 14),
-            (430, GND, 530, 70),
-            (600, GND - 70, 100, 14),
+            (0,    GND, 450, 70),
+            (540,  GND - 65, 120, 14),
+            (750,  GND - 130, 120, 14),
+            (960,  GND, 500, 70),
+            (1550, GND - 65, 120, 14),
+            (1750, GND, 500, 70),
+            (2340, GND - 65, 120, 14),
+            (2540, GND - 130, 120, 14),
+            (2750, GND, 850, 70),
         ],
         "switches": [
-            {"x": 370, "y": GND - 8, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"},
-            {"x": 625, "y": GND - 80, "w": 40, "h": 10, "id": 2, "timed": 210, "type": "button"},
+            {"x": 1000, "y": GND - 8,   "w": 44, "h": 8,  "id": 1, "timed": 0,   "type": "plate"},
+            {"x": 1590, "y": GND - 73,  "w": 40, "h": 10, "id": 2, "timed": 300, "type": "button"},
+            {"x": 2580, "y": GND - 138, "w": 44, "h": 8,  "id": 3, "timed": 0,   "type": "plate"},
         ],
         "gates": [
-            {"x": 430, "y": GND - 80, "w": 16, "h": 80, "id": 1},
-            {"x": 810, "y": GND - 80, "w": 16, "h": 80, "id": 2},
+            {"x": 1460, "y": GND - 80, "w": 16, "h": 80, "id": 1},
+            {"x": 2150, "y": GND - 80, "w": 16, "h": 80, "id": 2},
+            {"x": 3100, "y": GND - 80, "w": 16, "h": 80, "id": 3},
         ],
         "boxes": [
-            (100, GND)
+            (120, GND),
+            (200, GND),
+            (280, GND)
         ]
     }
 ]
@@ -731,7 +823,7 @@ def main():
     hint_font = pygame.font.SysFont("Courier", 16)
 
     sky_surf = build_sky_surface()
-    city_surf = build_city_surface()
+    city_surf = build_city_surface(W)
     fog_low = build_fog_surface(45)
     fog_top = build_fog_surface(20)
     scanlines = build_scanline_overlay()
@@ -758,8 +850,11 @@ def main():
     robot = None
     exit_portal = None
     
+    cam_x = 0
+    current_world_w = W
+
     def load_level(idx):
-        nonlocal platforms, switches, gates, boxes, robot, exit_portal
+        nonlocal platforms, switches, gates, boxes, robot, exit_portal, cam_x, current_world_w
         data = LEVELS[idx]
         robot = Robot(*data["robot"])
         robot.awake = True
@@ -769,6 +864,9 @@ def main():
         switches = [Switch(s["x"], s["y"], s["w"], s["h"], s["id"], s["timed"], s["type"]) for s in data["switches"]]
         gates = [Gate(g["x"], g["y"], g["w"], g["h"], g["id"]) for g in data["gates"]]
         boxes = [Box(*b) for b in data["boxes"]]
+        current_world_w = data.get("world_w", W)
+        city_surf = build_city_surface(int(current_world_w * 0.5) + W)
+        cam_x = 0
         particles.clear()
         
     overlay = pygame.Surface((W, H))
@@ -794,6 +892,8 @@ def main():
                     screen = create_display(FULLSCREEN)
                 elif event.key == pygame.K_r and state == ST_PLAY:
                     load_level(current_level)
+                elif event.key == pygame.K_e and state == ST_PLAY and robot:
+                    robot.try_pickup(boxes)
                 elif state == ST_MENU:
                     if pygame.K_1 <= event.key <= pygame.K_6:
                         lvl = event.key - pygame.K_1
@@ -834,12 +934,17 @@ def main():
 
         elif state == ST_PLAY:
             for b in boxes:
-                b.update(platforms, gates)
+                if b is not robot.carried:
+                    b.update(platforms, gates)
+            active_boxes = [b for b in boxes if b is not robot.carried]
             for s in switches:
-                s.update(robot, boxes)
+                s.update(robot, active_boxes)
             for g in gates:
                 g.update(switches)
-            shake = robot.update(platforms, particles, shake, boxes, gates)
+            shake = robot.update(platforms, particles, shake, boxes, gates, current_world_w)
+            
+            # Camera follows robot
+            cam_x = max(0, min(int(robot.x - W // 2 + robot.w // 2), current_world_w - W))
             
             if exit_portal and robot.rect.colliderect(exit_portal.rect):
                 unlocked_level = max(unlocked_level, current_level + 1)
@@ -852,9 +957,9 @@ def main():
 
         if state >= ST_INTRO:
             if frame % 14 == 0:
-                particles.append(Particle(random.uniform(0, W), H - 50, "ember"))
+                particles.append(Particle(random.uniform(0, current_world_w), H - 50, "ember"))
             if frame % 3 == 0:
-                particles.append(Particle(random.uniform(0, W), random.uniform(-20, 0), "rain"))
+                particles.append(Particle(random.uniform(0, current_world_w), random.uniform(-20, 0), "rain"))
 
         if shake[0] > 0:
             shake[0] = max(0, shake[0] - 0.6)
@@ -863,7 +968,8 @@ def main():
         # ── DRAW ──
         gs = game_surface
         gs.blit(sky_surf, (0, 0))
-        gs.blit(city_surf, (0, 0))
+        if city_surf:
+            gs.blit(city_surf, (-int(cam_x * 0.5), 0))
         gs.blit(fog_low, (0, 0))
 
         if state == ST_MENU:
@@ -923,17 +1029,60 @@ def main():
             gs.blit(ctrl, (W//2 - ctrl.get_width()//2, H - 40))
             
         elif exit_portal is not None:
-            # ── Draw game objects ──
-            exit_portal.draw(gs)
+            # ── Draw game objects with camera offset ──
+            def ox(obj_x): return int(obj_x - cam_x)
+
+            # Exit portal
+            ep = exit_portal
+            ep_s = pygame.Surface((ep.rect.w + 30, ep.rect.h + 30), pygame.SRCALPHA)
+            pulse = (math.sin(ep.frame * 0.08) + 1) / 2
+            ep.frame += 1
+            pygame.draw.ellipse(ep_s, (40, 255, 120, int(30 + 40 * pulse)), ep_s.get_rect())
+            gs.blit(ep_s, (ox(ep.rect.x) - 15, ep.rect.y - 15))
+            inner_a = int(60 + 60 * pulse)
+            ep_inner = pygame.Surface((ep.rect.w, ep.rect.h), pygame.SRCALPHA)
+            ep_inner.fill((40, 255, 100, inner_a))
+            gs.blit(ep_inner, (ox(ep.rect.x), ep.rect.y))
+            pygame.draw.rect(gs, (80, 255, 140), (ox(ep.rect.x), ep.rect.y, ep.rect.w, ep.rect.h), 2)
+            ecx = ox(ep.rect.centerx)
+            eay = ep.rect.y + 10 + int(4 * math.sin(ep.frame * 0.12))
+            pygame.draw.polygon(gs, (200, 255, 220), [(ecx, eay), (ecx - 8, eay + 12), (ecx + 8, eay + 12)])
+
             for s in switches:
-                s.draw(gs)
+                color = (0, 220, 255) if s.type == "button" else (255, 160, 30)
+                dim = tuple(c // 3 for c in color)
+                base_h = 6 if s.active else 12
+                base_y = s.rect.bottom - base_h
+                pygame.draw.rect(gs, dim, (ox(s.rect.x) - 2, base_y, s.rect.w + 4, base_h))
+                top_col = color if s.active else dim
+                pygame.draw.rect(gs, top_col, (ox(s.rect.x), base_y, s.rect.w, 3))
+                if s.active:
+                    g_sw = pygame.Surface((s.rect.w + 20, 20), pygame.SRCALPHA)
+                    pygame.draw.ellipse(g_sw, (*color, 60), g_sw.get_rect())
+                    gs.blit(g_sw, (ox(s.rect.x) - 10, base_y - 8))
+                if s.timed > 0 and s.active and s.timer > 0:
+                    pygame.draw.rect(gs, (255, 255, 80), (ox(s.rect.x), base_y - 6, int(s.rect.w * s.timer / s.timed), 3))
+
             for g in gates:
-                g.draw(gs, frame)
+                if not g.is_open:
+                    pygame.draw.rect(gs, (80, 15, 15), (ox(g.rect.x), g.rect.y, g.rect.w, g.rect.h))
+                    for i in range(0, g.rect.h, 8):
+                        a = int(120 + 80 * math.sin((i + frame * 3) * 0.15))
+                        pygame.draw.line(gs, (min(255, a + 80), 40, 40),
+                                         (ox(g.rect.x) + 1, g.rect.y + i), (ox(g.rect.x) + g.rect.w - 1, g.rect.y + i), 2)
+
             for b in boxes:
-                b.draw(gs)
+                if b is not robot.carried:
+                    bx = ox(b.rect.x)
+                    pygame.draw.rect(gs, (50, 52, 65), (bx, b.rect.y, b.w, b.h))
+                    pygame.draw.rect(gs, (90, 95, 110), (bx, b.rect.y, b.w, b.h), 2)
+                    pygame.draw.line(gs, (90, 95, 110), (bx, b.rect.y), (bx + b.w, b.rect.y + b.h), 1)
+                    pygame.draw.line(gs, (90, 95, 110), (bx + b.w, b.rect.y), (bx, b.rect.y + b.h), 1)
+
             for p in platforms:
-                p.draw(gs)
-            robot.draw(gs)
+                gs.blit(p.surf, (ox(p.rect.x), p.rect.y))
+
+            robot.draw(gs, cam_x)
 
             if state == ST_INTRO and frame < 60:
                 beam = pygame.Surface((W, H), pygame.SRCALPHA)
@@ -945,7 +1094,7 @@ def main():
                 gs.blit(beam, (0, 0))
 
             for p in particles:
-                p.draw(gs)
+                p.draw(gs, ox=cam_x)
 
             # ── nothing-style HUD ──
             if state == ST_PLAY:
