@@ -895,6 +895,63 @@ def _bridge_count(hazard_w, plat_w=90, max_gap=110):
     return max(4, int(hazard_w / (plat_w + max_gap)) + 2)
 
 
+def tmpl_navigation(p):
+    safe_w = 280
+    hz_x   = safe_w
+    hz_w   = p.world_w - safe_w * 2
+    count  = _bridge_count(hz_w, max_gap=p.gap_max_px)
+    spacing = hz_w / (count + 1)
+    heights = [GND - 40, GND - 80, GND - 120, GND - 80]
+    mem_plats = [
+        (int(hz_x + spacing * (i + 1)) - 45, heights[i % 4], 90, 14)
+        for i in range(count)
+    ]
+    return {
+        "name":  f"ghost run {p.n}",
+        "hint":  _HINTS_NAV[p.n % len(_HINTS_NAV)],
+        "world_w": p.world_w,
+        "robot": (60, GND - 36),
+        "exit":  (p.world_w - 60, GND),
+        "platforms": [
+            (0,              GND, safe_w, 70),
+            (p.world_w - safe_w, GND, safe_w, 70),
+        ],
+        "memory_platforms": mem_plats,
+        "hazards": [(hz_x, GND - 20, hz_w, 20)],
+        "switches": [],
+        "gates":   [],
+        "boxes":   [],
+    }
+
+
+def tmpl_box_puzzle(p):
+    gap     = p.gap_max_px
+    left_w  = max(p.world_w // 3, 380)
+    right_x = left_w + gap
+    right_w = p.world_w - right_x
+    return {
+        "name":  f"cargo {p.n}",
+        "hint":  _HINTS_BOX[p.n % len(_HINTS_BOX)],
+        "world_w": p.world_w,
+        "robot": (60, GND - 36),
+        "exit":  (p.world_w - 70, GND),
+        "platforms": [
+            (0,       GND, left_w,  70),
+            (right_x, GND, right_w, 70),
+        ],
+        "memory_platforms": [],
+        "hazards": [(left_w, GND - 20, gap, 20)],
+        "switches": [
+            {"x": p.world_w - 200, "y": GND - 8, "w": 44, "h": 8,
+             "id": 1, "timed": 0, "type": "plate"}
+        ],
+        "gates": [
+            {"x": p.world_w - 130, "y": GND - 200, "w": 16, "h": 200, "id": 1}
+        ],
+        "boxes": [(160, GND)],
+    }
+
+
 # ── Main ────────────────────────────────────────────────────────
 def main():
     global screen, FULLSCREEN
