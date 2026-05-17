@@ -952,6 +952,94 @@ def tmpl_box_puzzle(p):
     }
 
 
+def tmpl_memory_traverse(p):
+    safe_w  = 300
+    hz_x    = safe_w
+    hz_w    = p.world_w - safe_w * 2
+    count   = max(4, int(hz_w / (p.gap_max_px + 45)) + 1)
+    spacing = hz_w / (count + 1)
+    heights = [GND - 50, GND - 90, GND - 130, GND - 90]
+    mem_plats = [
+        (int(hz_x + spacing * (i + 1)) - 45, heights[i % 4], 90, 14)
+        for i in range(count)
+    ]
+    return {
+        "name":  f"flash run {p.n}",
+        "hint":  _HINTS_MEM[p.n % len(_HINTS_MEM)],
+        "world_w": p.world_w,
+        "robot": (60, GND - 36),
+        "exit":  (p.world_w - 60, GND),
+        "platforms": [
+            (0,                  GND, safe_w, 70),
+            (p.world_w - safe_w, GND, safe_w, 70),
+        ],
+        "memory_platforms": mem_plats,
+        "hazards": [(hz_x, GND - 20, hz_w, 20)],
+        "switches": [
+            {"x": 100, "y": GND - 8, "w": 44, "h": 8,
+             "id": 1, "timed": p.timer_frames, "type": "button"}
+        ],
+        "gates": [
+            {"x": p.world_w - safe_w - 20, "y": GND - 200, "w": 16, "h": 200, "id": 1}
+        ],
+        "boxes": [],
+    }
+
+
+def tmpl_combo(p):
+    safe_w  = 300
+    hz_x    = safe_w
+    hz_w    = p.world_w - safe_w * 2
+    count   = max(4, int(hz_w / (p.gap_max_px + 50)) + 1)  # wider plats (100px), so +50
+    spacing = hz_w / (count + 1)
+    heights = [GND - 50, GND - 90, GND - 130, GND - 90]
+    mem_plats = [
+        (int(hz_x + spacing * (i + 1)) - 50, heights[i % 4], 100, 14)
+        for i in range(count)
+    ]
+    return {
+        "name":  f"overload {p.n}",
+        "hint":  _HINTS_COMBO[p.n % len(_HINTS_COMBO)],
+        "world_w": p.world_w,
+        "robot": (60, GND - 36),
+        "exit":  (p.world_w - 60, GND),
+        "platforms": [
+            (0,                  GND, safe_w, 70),
+            (p.world_w - safe_w, GND, safe_w, 70),
+        ],
+        "memory_platforms": mem_plats,
+        "hazards": [(hz_x, GND - 20, hz_w, 20)],
+        "switches": [
+            {"x": 80, "y": GND - 8, "w": 44, "h": 8,
+             "id": 1, "timed": p.timer_frames, "type": "button"}
+        ],
+        "gates": [
+            {"x": p.world_w - safe_w - 20, "y": GND - 200, "w": 16, "h": 200, "id": 1}
+        ],
+        "boxes": [(220, GND)],
+    }
+
+
+def _pick_template(n):
+    r = n % 4
+    if r == 2: return tmpl_navigation
+    if r == 3: return tmpl_box_puzzle
+    if r == 0: return tmpl_memory_traverse
+    return tmpl_combo if n >= 8 else tmpl_navigation  # r == 1
+
+
+def generate_level(n):
+    """Return a level dict for 1-based level index n (call with n >= 6)."""
+    return _pick_template(n)(DifficultyProfile(n))
+
+
+def get_level(idx):
+    """0-based index. Returns handcrafted level for idx < len(LEVELS), generated for idx >= len(LEVELS)."""
+    if idx < len(LEVELS):
+        return LEVELS[idx]
+    return generate_level(idx + 1)
+
+
 # ── Main ────────────────────────────────────────────────────────
 def main():
     global screen, FULLSCREEN
