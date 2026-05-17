@@ -857,6 +857,44 @@ LEVELS = [
     }
 ]
 
+# ── Level Generator ─────────────────────────────────────────────
+
+_HINTS_NAV = [
+    "the world glitches. trust your memory.",
+    "ghost paths. blink and you fall.",
+    "the unseen road. remember.",
+]
+_HINTS_BOX = [
+    "carry the box. activate the plate.",
+    "weight solves gates.",
+    "box. plate. gate. in that order.",
+]
+_HINTS_MEM = [
+    "memorize. then run.",
+    "one flash. one chance.",
+    "the path vanishes. go.",
+]
+_HINTS_COMBO = [
+    "carry across the unseen. clock is running.",
+    "box + memory + time. good luck.",
+    "overloaded. all three at once.",
+]
+
+
+class DifficultyProfile:
+    def __init__(self, n):
+        self.n             = n
+        self.world_w       = min(max(1400 + n * 220, 1400), 6000)
+        self.mem_plat_count = min(max(n // 2, 4), 14)
+        self.gap_max_px    = min(max(80 + n * 6, 80), 115)
+        self.timer_frames  = min(max(600 - n * 20, 180), 600)
+
+
+def _bridge_count(hazard_w, plat_w=90, max_gap=110):
+    """Minimum memory platforms needed so no gap exceeds max_gap."""
+    return max(4, int(hazard_w / (plat_w + max_gap)) + 2)
+
+
 # ── Main ────────────────────────────────────────────────────────
 def main():
     global screen, FULLSCREEN
