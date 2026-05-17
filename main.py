@@ -899,7 +899,7 @@ def tmpl_navigation(p):
     safe_w = 280
     hz_x   = safe_w
     hz_w   = p.world_w - safe_w * 2
-    count  = _bridge_count(hz_w, max_gap=p.gap_max_px)
+    count  = max(4, int(hz_w / (p.gap_max_px + 45)) + 1)
     spacing = hz_w / (count + 1)
     heights = [GND - 40, GND - 80, GND - 120, GND - 80]
     mem_plats = [
@@ -926,7 +926,7 @@ def tmpl_navigation(p):
 
 def tmpl_box_puzzle(p):
     gap     = p.gap_max_px
-    left_w  = max(p.world_w // 3, 380)
+    left_w  = p.world_w // 3
     right_x = left_w + gap
     right_w = p.world_w - right_x
     return {
