@@ -1,3 +1,5 @@
+
+# pyrefly: ignore [missing-import]
 import pygame
 import sys
 import random
@@ -319,9 +321,13 @@ class Robot:
             self.carried = None
         else:
             best = None
-            best_dist = 40
+            best_dist = 60
             for b in boxes:
-                dx = abs(b.rect.centerx - self.rect.centerx)
+                cx = self.x + self.w / 2
+                if self.facing_right and b.rect.centerx < cx: continue
+                if not self.facing_right and b.rect.centerx > cx: continue
+                
+                dx = abs(b.rect.centerx - cx)
                 dy = abs(b.rect.centery - self.rect.centery)
                 d = dx + dy
                 if d < best_dist:
@@ -593,6 +599,44 @@ class Platform:
     def draw(self, surface):
         surface.blit(self.surf, self.rect.topleft)
 
+class MemoryPlatform:
+    def __init__(self, x, y, w, h):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.w = w
+        self.h = h
+
+    def draw(self, surface, flashback_active, frame, cam_x=0):
+        if flashback_active:
+            rx = self.rect.x - cam_x
+            r = pygame.Rect(rx, self.rect.y, self.rect.w, self.rect.h)
+            # Draw glitchy / cyan outline
+            pygame.draw.rect(surface, (0, 255, 255, 60), r)
+            pygame.draw.rect(surface, (0, 255, 255, 180), r, 2)
+            # Scanlines inside
+            for i in range(0, self.w, 15):
+                offset = int(5 * math.sin(frame * 0.1 + i))
+                pygame.draw.line(surface, (0, 255, 255, 100), (rx + i, self.rect.y + offset), (rx + i, self.rect.bottom), 1)
+
+class Hazard:
+    def __init__(self, x, y, w, h):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.w = w
+        self.h = h
+        
+    def draw(self, surface, frame, cam_x=0):
+        rx = self.rect.x - cam_x
+        r = pygame.Rect(rx, self.rect.y, self.rect.w, self.rect.h)
+        pygame.draw.rect(surface, (50, 5, 5), r)
+        pygame.draw.rect(surface, (150, 20, 20), r, 1)
+        # Laser beams going up
+        for i in range(0, self.w, 12):
+            h_line = 6 + 8 * math.sin(frame * 0.2 + i)
+            pygame.draw.line(surface, (255, 40, 40), (rx + i, self.rect.y), (rx + i, self.rect.y - h_line), 2)
+            # Floating particles above hazard
+            if random.random() < 0.1:
+                py = self.rect.y - random.randint(5, 20)
+                pygame.draw.rect(surface, (255, 100, 100), (rx + i, py, 2, 2))
+
 # ── City Background ─────────────────────────────
 def build_city_surface(width):
     surf = pygame.Surface((width, H), pygame.SRCALPHA)
@@ -658,158 +702,157 @@ GND = H - 50  # y of ground surface
 
 LEVELS = [
     {
-        "name": "carry on",
-        "hint": "[e] pick up / drop box. get it to the plate.",
+        "name": "the basics",
+        "hint": "[e] pick up box in front of you. get it to the plate.",
         "world_w": 1400,
         "robot": (60, GND - 36),
         "exit": (1340, GND),
         "platforms": [
-            (0,    GND, 400, 70),          # left ground
-            (490,  GND - 65, 120, 14),     # middle platform
-            (700,  GND, 700, 70),          # right ground
+            (0,    GND, 400, 70),
+            (490,  GND - 65, 120, 14),
+            (700,  GND, 700, 70),
         ],
+        "memory_platforms": [],
+        "hazards": [],
         "switches": [
             {"x": 750, "y": GND - 8, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"}
         ],
         "gates": [
-            {"x": 900, "y": GND - 80, "w": 16, "h": 80, "id": 1}
+            {"x": 900, "y": GND - 200, "w": 16, "h": 200, "id": 1}
         ],
         "boxes": [
             (180, GND)
         ]
     },
     {
-        "name": "high ground",
-        "hint": "plate is elevated. carry the box up.",
+        "name": "the unseen path",
+        "hint": "the world glitches. remember what you see.",
         "world_w": 1600,
         "robot": (60, GND - 36),
         "exit": (1530, GND),
         "platforms": [
             (0,    GND, 300, 70),
-            (390,  GND - 65, 130, 14),
-            (600,  GND - 130, 130, 14),
-            (800,  GND, 760, 70),
+            (1200, GND, 400, 70),
         ],
-        "switches": [
-            {"x": 645, "y": GND - 138, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"}
+        "memory_platforms": [
+            (380, GND - 40, 100, 14),
+            (580, GND - 80, 100, 14),
+            (780, GND - 120, 100, 14),
+            (980, GND - 60, 100, 14),
         ],
-        "gates": [
-            {"x": 1050, "y": GND - 80, "w": 16, "h": 80, "id": 1}
+        "hazards": [
+            (300, GND - 20, 900, 20)
         ],
-        "boxes": [
-            (120, GND)
-        ]
+        "switches": [],
+        "gates": [],
+        "boxes": []
     },
     {
-        "name": "logistics",
-        "hint": "two gates. two plates. plan your route.",
+        "name": "laser grid",
+        "hint": "red is death. don't touch it.",
         "world_w": 2000,
         "robot": (60, GND - 36),
         "exit": (1940, GND),
         "platforms": [
-            (0,    GND, 400, 70),
-            (490,  GND - 65, 120, 14),
-            (700,  GND, 500, 70),
-            (1290, GND - 65, 120, 14),
+            (0,    GND, 200, 70),
+            (300,  GND - 65, 100, 14),
+            (500,  GND - 130, 100, 14),
+            (800,  GND, 300, 70),
+            (1200, GND - 65, 120, 14),
             (1500, GND, 500, 70),
         ],
+        "memory_platforms": [
+            (680, GND - 60, 80, 14)
+        ],
+        "hazards": [
+            (200, GND - 20, 600, 20),
+            (1100, GND - 20, 400, 20),
+            (650, GND - 180, 20, 100)
+        ],
         "switches": [
-            {"x": 750, "y": GND - 8, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"},
-            {"x": 1550, "y": GND - 8, "w": 44, "h": 8, "id": 2, "timed": 0, "type": "plate"},
+            {"x": 850, "y": GND - 8, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"},
         ],
         "gates": [
-            {"x": 1200, "y": GND - 80, "w": 16, "h": 80, "id": 1},
-            {"x": 1750, "y": GND - 80, "w": 16, "h": 80, "id": 2},
+            {"x": 1400, "y": GND - 200, "w": 16, "h": 200, "id": 1},
         ],
         "boxes": [
-            (150, GND),
-            (220, GND)
+            (100, GND)
         ]
     },
     {
-        "name": "sequencer",
-        "hint": "you need the box on the far side. think first.",
+        "name": "mental acrobatics",
+        "hint": "carry the box across the unseen. hurry.",
         "world_w": 2400,
         "robot": (60, GND - 36),
         "exit": (2340, GND),
         "platforms": [
             (0,    GND, 350, 70),
-            (440,  GND - 65, 110, 14),
-            (640,  GND, 400, 70),
-            (1130, GND - 65, 110, 14),
-            (1330, GND - 130, 110, 14),
-            (1530, GND, 870, 70),
+            (2000, GND, 400, 70),
+        ],
+        "memory_platforms": [
+            (450, GND - 40, 100, 14),
+            (700, GND - 80, 100, 14),
+            (950, GND - 120, 100, 14),
+            (1200, GND - 80, 100, 14),
+            (1450, GND - 40, 100, 14),
+            (1700, GND, 100, 14),
+        ],
+        "hazards": [
+            (350, GND - 20, 1650, 20)
         ],
         "switches": [
-            {"x": 680, "y": GND - 8, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"},
-            {"x": 1370, "y": GND - 138, "w": 44, "h": 8, "id": 2, "timed": 0, "type": "plate"},
+            {"x": 100, "y": GND - 73, "w": 40, "h": 10, "id": 1, "timed": 600, "type": "button"}
         ],
         "gates": [
-            {"x": 1040, "y": GND - 80, "w": 16, "h": 80, "id": 1},
-            {"x": 1840, "y": GND - 80, "w": 16, "h": 80, "id": 2},
-        ],
-        "boxes": [
-            (150, GND),
-            (250, GND)
-        ]
-    },
-    {
-        "name": "countdown",
-        "hint": "timed button. carry the box. reach plate before gate closes.",
-        "world_w": 2800,
-        "robot": (60, GND - 36),
-        "exit": (2740, GND),
-        "platforms": [
-            (0,    GND, 400, 70),
-            (100,  GND - 65, 110, 14),
-            (490,  GND - 65, 110, 14),
-            (690,  GND, 500, 70),
-            (1280, GND - 65, 110, 14),
-            (1480, GND, 1320, 70),
-        ],
-        "switches": [
-            {"x": 120, "y": GND - 73, "w": 40, "h": 10, "id": 1, "timed": 360, "type": "button"},
-            {"x": 1520, "y": GND - 8, "w": 44, "h": 8, "id": 2, "timed": 0, "type": "plate"},
-        ],
-        "gates": [
-            {"x": 1000, "y": GND - 80, "w": 16, "h": 80, "id": 1},
-            {"x": 2100, "y": GND - 80, "w": 16, "h": 80, "id": 2},
+            {"x": 2100, "y": GND - 200, "w": 16, "h": 200, "id": 1}
         ],
         "boxes": [
             (200, GND)
         ]
     },
     {
-        "name": "the gauntlet",
-        "hint": "everything. no hints. figure it out.",
+        "name": "the grand illusion",
+        "hint": "good luck.",
         "world_w": 3600,
         "robot": (60, GND - 36),
         "exit": (3540, GND),
         "platforms": [
-            (0,    GND, 450, 70),
-            (540,  GND - 65, 120, 14),
-            (750,  GND - 130, 120, 14),
-            (960,  GND, 500, 70),
-            (1550, GND - 65, 120, 14),
-            (1750, GND, 500, 70),
-            (2340, GND - 65, 120, 14),
-            (2540, GND - 130, 120, 14),
-            (2750, GND, 850, 70),
+            (0,    GND, 400, 70),
+            (1000, GND - 100, 200, 14),
+            (2200, GND, 300, 70),
+            (3200, GND, 400, 70),
+        ],
+        "memory_platforms": [
+            (450, GND - 40, 80, 14),
+            (600, GND - 80, 80, 14),
+            (750, GND - 120, 80, 14),
+            (1300, GND - 120, 80, 14),
+            (1500, GND - 80, 80, 14),
+            (1700, GND - 40, 80, 14),
+            (1900, GND, 80, 14),
+            (2600, GND - 60, 80, 14),
+            (2800, GND - 120, 80, 14),
+            (3000, GND - 60, 80, 14),
+        ],
+        "hazards": [
+            (400, GND - 20, 1800, 20),
+            (2500, GND - 20, 700, 20),
+            (850, GND - 200, 20, 150),
+            (1250, GND - 200, 20, 80),
+            (1600, GND - 200, 20, 120),
+            (2900, GND - 200, 20, 80),
         ],
         "switches": [
-            {"x": 1000, "y": GND - 8,   "w": 44, "h": 8,  "id": 1, "timed": 0,   "type": "plate"},
-            {"x": 1590, "y": GND - 73,  "w": 40, "h": 10, "id": 2, "timed": 300, "type": "button"},
-            {"x": 2580, "y": GND - 138, "w": 44, "h": 8,  "id": 3, "timed": 0,   "type": "plate"},
+            {"x": 1050, "y": GND - 108, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"},
+            {"x": 2350, "y": GND - 8, "w": 44, "h": 8, "id": 2, "timed": 0, "type": "plate"},
         ],
         "gates": [
-            {"x": 1460, "y": GND - 80, "w": 16, "h": 80, "id": 1},
-            {"x": 2150, "y": GND - 80, "w": 16, "h": 80, "id": 2},
-            {"x": 3100, "y": GND - 80, "w": 16, "h": 80, "id": 3},
+            {"x": 2050, "y": GND - 200, "w": 16, "h": 200, "id": 1},
+            {"x": 3300, "y": GND - 200, "w": 16, "h": 200, "id": 2},
         ],
         "boxes": [
-            (120, GND),
             (200, GND),
-            (280, GND)
+            (2250, GND)
         ]
     }
 ]
@@ -844,6 +887,8 @@ def main():
     intro_done = False
     
     platforms = []
+    memory_platforms = []
+    hazards = []
     switches = []
     gates = []
     boxes = []
@@ -854,13 +899,15 @@ def main():
     current_world_w = W
 
     def load_level(idx):
-        nonlocal platforms, switches, gates, boxes, robot, exit_portal, cam_x, current_world_w
+        nonlocal platforms, memory_platforms, hazards, switches, gates, boxes, robot, exit_portal, cam_x, current_world_w
         data = LEVELS[idx]
         robot = Robot(*data["robot"])
         robot.awake = True
         robot.eye_brightness = 1.0
         exit_portal = ExitPortal(*data["exit"])
         platforms = [Platform(*p) for p in data["platforms"]]
+        memory_platforms = [MemoryPlatform(*p) for p in data.get("memory_platforms", [])]
+        hazards = [Hazard(*h) for h in data.get("hazards", [])]
         switches = [Switch(s["x"], s["y"], s["w"], s["h"], s["id"], s["timed"], s["type"]) for s in data["switches"]]
         gates = [Gate(g["x"], g["y"], g["w"], g["h"], g["id"]) for g in data["gates"]]
         boxes = [Box(*b) for b in data["boxes"]]
@@ -932,20 +979,47 @@ def main():
                 state = ST_PLAY
                 intro_done = True
 
-        elif state == ST_PLAY:
+        flashback_active = False
+        if state == ST_PLAY:
+            if frame % 240 < 15: # Glitch for 15 frames every 4 seconds
+                flashback_active = True
+                
+            all_platforms = platforms + memory_platforms
             for b in boxes:
                 if b is not robot.carried:
-                    b.update(platforms, gates)
+                    b.update(all_platforms, gates)
             active_boxes = [b for b in boxes if b is not robot.carried]
             for s in switches:
                 s.update(robot, active_boxes)
             for g in gates:
                 g.update(switches)
-            shake = robot.update(platforms, particles, shake, boxes, gates, current_world_w)
+            shake = robot.update(all_platforms, particles, shake, boxes, gates, current_world_w)
             
             # Camera follows robot
             cam_x = max(0, min(int(robot.x - W // 2 + robot.w // 2), current_world_w - W))
             
+            player_rect = robot.rect
+            for h in hazards:
+                if player_rect.colliderect(h.rect):
+                    # DEATH
+                    load_level(current_level)
+                    break
+
+            #check if any box is on a hazard
+            for b in boxes :
+                for h in hazards :
+                    if b.rect.colliderect(h.rect):
+                        # to spawn a cool spark explotion where the box died
+                        for _ in range(10) :
+                            particles.append(Particle(b.rect.centerx, b.rect.centery,"spark"))
+
+                        # teleport the box back to the sky at the start of the
+                        b.x = 120
+                        b.y = -50
+                        b.vy = 0 
+
+
+
             if exit_portal and robot.rect.colliderect(exit_portal.rect):
                 unlocked_level = max(unlocked_level, current_level + 1)
                 if current_level + 1 < len(LEVELS):
@@ -1081,6 +1155,12 @@ def main():
 
             for p in platforms:
                 gs.blit(p.surf, (ox(p.rect.x), p.rect.y))
+                
+            for h in hazards:
+                h.draw(gs, frame, cam_x)
+                
+            for p in memory_platforms:
+                p.draw(gs, flashback_active, frame, cam_x)
 
             robot.draw(gs, cam_x)
 
