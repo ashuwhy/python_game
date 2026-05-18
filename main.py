@@ -288,6 +288,142 @@ class Box:
                     self.vy = 0
 
 
+# ── Virus ────────────────────────────────────────────────────────
+class Virus:
+    def __init__(self, x, y, left, right):
+        self.x = float(x)
+        self.y = float(y)   # top of sprite
+        self.w, self.h = 22, 20
+        self.left, self.right = float(left), float(right)
+        self.vx = 1.2
+        self.frame = 0
+
+    @property
+    def rect(self):
+        return pygame.Rect(int(self.x), int(self.y), self.w, self.h)
+
+    def update(self):
+        self.frame += 1
+        self.x += self.vx
+        if self.x <= self.left or self.x + self.w >= self.right:
+            self.vx *= -1
+            self.x = max(self.left, min(self.x, self.right - self.w))
+
+    def draw(self, surface, cam_x):
+        rx = int(self.x - cam_x)
+        ry = int(self.y)
+        cx, cy = rx + self.w // 2, ry + self.h // 2
+        pulse = (math.sin(self.frame * 0.15) + 1) / 2
+        r = int(10 + 2 * pulse)
+        pygame.draw.circle(surface, (150, 15, 210), (cx, cy), r)
+        pygame.draw.circle(surface, (195, 55, 255), (cx, cy), r - 3)
+        pygame.draw.rect(surface, (255, 240, 0), (cx - 6, cy - 3, 4, 4))
+        pygame.draw.rect(surface, (255, 240, 0), (cx + 2, cy - 3, 4, 4))
+        tip_x = cx + (4 if self.vx > 0 else -4)
+        pygame.draw.line(surface, (195, 55, 255), (cx, ry), (tip_x, ry - 7), 2)
+        pygame.draw.circle(surface, (255, 100, 255), (tip_x, ry - 7), 3)
+
+
+# ── Bolt ─────────────────────────────────────────────────────────
+class Bolt:
+    def __init__(self, x, y, direction):
+        self.x = float(x)
+        self.y = float(y)
+        self.vx = 9.0 * direction
+        self.w, self.h = 18, 5
+        self.alive = True
+        self.frame = 0
+
+    @property
+    def rect(self):
+        return pygame.Rect(int(self.x), int(self.y), self.w, self.h)
+
+    def update(self, world_w):
+        self.frame += 1
+        self.x += self.vx
+        if self.x < -self.w or self.x > world_w:
+            self.alive = False
+
+    def draw(self, surface, cam_x):
+        rx = int(self.x - cam_x)
+        pulse = (math.sin(self.frame * 0.4) + 1) / 2
+        col = (int(120 + 135 * pulse), 220, 255)
+        pygame.draw.rect(surface, col, (rx, int(self.y), self.w, self.h))
+        glow = pygame.Surface((self.w + 8, self.h + 8), pygame.SRCALPHA)
+        pygame.draw.rect(glow, (100, 200, 255, 70), glow.get_rect(), border_radius=3)
+        surface.blit(glow, (rx - 4, int(self.y) - 2))
+
+
+# ── Boss ─────────────────────────────────────────────────────────
+class Boss:
+    MAX_HP = 6
+
+    def __init__(self, x, y, left, right):
+        self.x = float(x)
+        self.y = float(y)
+        self.w, self.h = 56, 56
+        self.vx = 2.2
+        self.vy = 0.0
+        self.left, self.right = float(left), float(right)
+        self.hp = Boss.MAX_HP
+        self.hurt_timer = 0
+        self.frame = 0
+        self.dead_flag = False
+
+    @property
+    def rect(self):
+        return pygame.Rect(int(self.x), int(self.y), self.w, self.h)
+
+    def update(self, platforms):
+        self.frame += 1
+        if self.hurt_timer > 0:
+            self.hurt_timer -= 1
+        self.x += self.vx
+        self.vy += 0.48
+        self.y += self.vy
+        if self.x <= self.left:
+            self.x = self.left; self.vx = abs(self.vx)
+        elif self.x + self.w >= self.right:
+            self.x = self.right - self.w; self.vx = -abs(self.vx)
+        r = self.rect
+        for p in platforms:
+            if r.colliderect(p.rect) and self.vy > 0:
+                self.y = float(p.rect.top - self.h)
+                self.vy = -7.0
+        if self.y + self.h >= GND:
+            self.y = float(GND - self.h)
+            self.vy = -7.0
+
+    def hit(self):
+        if self.hurt_timer == 0:
+            self.hp -= 1
+            self.hurt_timer = 40
+            if self.hp <= 0:
+                self.dead_flag = True
+            return True
+        return False
+
+    def draw(self, surface, cam_x, frame):
+        rx = int(self.x - cam_x)
+        ry = int(self.y)
+        cx, cy = rx + self.w // 2, ry + self.h // 2
+        pulse = (math.sin(frame * 0.07) + 1) / 2
+        hurt = self.hurt_timer > 0
+        r = int(28 + 4 * pulse)
+        pygame.draw.circle(surface, (255, 80, 40) if hurt else (160, 15, 210), (cx, cy), r)
+        pygame.draw.circle(surface, (255, 140, 100) if hurt else (205, 55, 255), (cx, cy), r - 7)
+        eye_y = cy - 6
+        pygame.draw.rect(surface, (255, 255, 40), (cx - 14, eye_y, 9, 7))
+        pygame.draw.rect(surface, (255, 255, 40), (cx + 5, eye_y, 9, 7))
+        pygame.draw.line(surface, (255, 30, 30), (cx - 16, eye_y - 4), (cx - 7, eye_y), 2)
+        pygame.draw.line(surface, (255, 30, 30), (cx + 6, eye_y), (cx + 15, eye_y - 4), 2)
+        bw = 70
+        bx, by = cx - bw // 2, ry - 18
+        pygame.draw.rect(surface, (30, 10, 10), (bx, by, bw, 8))
+        pygame.draw.rect(surface, (220, 40, 40), (bx, by, int(bw * max(self.hp, 0) / Boss.MAX_HP), 8))
+        pygame.draw.rect(surface, (180, 50, 50), (bx, by, bw, 8), 1)
+
+
 # ── Robot ───────────────────────────────────────────────────────
 class Robot:
     def __init__(self, x, y):
@@ -906,6 +1042,7 @@ def tmpl_navigation(p):
         (int(hz_x + spacing * (i + 1)) - 45, heights[i % 4], 90, 14)
         for i in range(count)
     ]
+    virus_list = [(p.world_w - safe_w + 30, GND - 20, p.world_w - safe_w + 10, p.world_w - 20)] if p.n >= 7 else []
     return {
         "name":  f"ghost run {p.n}",
         "hint":  _HINTS_NAV[p.n % len(_HINTS_NAV)],
@@ -921,6 +1058,7 @@ def tmpl_navigation(p):
         "switches": [],
         "gates":   [],
         "boxes":   [],
+        "viruses": virus_list,
     }
 
 
@@ -929,6 +1067,7 @@ def tmpl_box_puzzle(p):
     left_w  = p.world_w // 3
     right_x = left_w + gap
     right_w = p.world_w - right_x
+    virus_list = [(right_x + 50, GND - 20, right_x + 20, p.world_w - 110)] if p.n >= 7 else []
     return {
         "name":  f"cargo {p.n}",
         "hint":  _HINTS_BOX[p.n % len(_HINTS_BOX)],
@@ -949,6 +1088,7 @@ def tmpl_box_puzzle(p):
             {"x": p.world_w - 130, "y": GND - 200, "w": 16, "h": 200, "id": 1}
         ],
         "boxes": [(160, GND)],
+        "viruses": virus_list,
     }
 
 
@@ -963,6 +1103,7 @@ def tmpl_memory_traverse(p):
         (int(hz_x + spacing * (i + 1)) - 45, heights[i % 4], 90, 14)
         for i in range(count)
     ]
+    virus_list = [(160, GND - 20, 110, safe_w - 20)] if p.n >= 8 else []
     return {
         "name":  f"flash run {p.n}",
         "hint":  _HINTS_MEM[p.n % len(_HINTS_MEM)],
@@ -983,6 +1124,7 @@ def tmpl_memory_traverse(p):
             {"x": p.world_w - safe_w - 20, "y": GND - 200, "w": 16, "h": 200, "id": 1}
         ],
         "boxes": [],
+        "viruses": virus_list,
     }
 
 
@@ -997,6 +1139,7 @@ def tmpl_combo(p):
         (int(hz_x + spacing * (i + 1)) - 50, heights[i % 4], 100, 14)
         for i in range(count)
     ]
+    virus_list = [(p.world_w - safe_w + 40, GND - 20, p.world_w - safe_w + 10, p.world_w - 70)] if p.n >= 9 else []
     return {
         "name":  f"overload {p.n}",
         "hint":  _HINTS_COMBO[p.n % len(_HINTS_COMBO)],
@@ -1017,6 +1160,31 @@ def tmpl_combo(p):
             {"x": p.world_w - safe_w - 20, "y": GND - 200, "w": 16, "h": 200, "id": 1}
         ],
         "boxes": [(220, GND)],
+        "viruses": virus_list,
+    }
+
+
+def tmpl_boss(p):
+    world_w = 1800
+    return {
+        "name":  "system error",
+        "hint":  "terminate the source.",
+        "world_w": world_w,
+        "robot": (60, GND - 36),
+        "exit":  (world_w - 60, GND),
+        "platforms": [
+            (0,    GND, world_w, 70),
+            (350,  GND - 160, 180, 14),
+            (900,  GND - 220, 180, 14),
+            (1350, GND - 160, 180, 14),
+        ],
+        "memory_platforms": [],
+        "hazards":  [],
+        "switches": [],
+        "gates": [{"x": world_w - 90, "y": GND - 220, "w": 16, "h": 220, "id": 999}],
+        "boxes":    [],
+        "viruses":  [],
+        "boss": {"x": 800, "y": GND - 300, "left": 100, "right": 1700},
     }
 
 
@@ -1030,6 +1198,8 @@ def _pick_template(n):
 
 def generate_level(n):
     """Return a level dict for 1-based level index n (call with n >= 6)."""
+    if n == 10:
+        return tmpl_boss(DifficultyProfile(n))
     return _pick_template(n)(DifficultyProfile(n))
 
 
@@ -1085,11 +1255,18 @@ def main():
     current_world_w = W
 
     current_level_data = {}
+    viruses = []
+    bolts   = []
+    boss    = None
 
     def load_level(idx):
-        nonlocal platforms, memory_platforms, hazards, switches, gates, boxes, robot, exit_portal, cam_x, current_world_w, current_level_data
+        nonlocal platforms, memory_platforms, hazards, switches, gates, boxes, robot, exit_portal, cam_x, current_world_w, current_level_data, viruses, bolts, boss
         data = get_level(idx)
         current_level_data = data
+        viruses = [Virus(*v) for v in data.get("viruses", [])]
+        bolts   = []
+        bd      = data.get("boss")
+        boss    = Boss(bd["x"], bd["y"], bd["left"], bd["right"]) if bd else None
         robot = Robot(*data["robot"])
         robot.awake = True
         robot.eye_brightness = 1.0
@@ -1130,6 +1307,11 @@ def main():
                     load_level(current_level)
                 elif event.key == pygame.K_e and state == ST_PLAY and robot:
                     robot.try_pickup(boxes)
+                elif event.key == pygame.K_f and state == ST_PLAY and robot:
+                    direction = 1 if robot.facing_right else -1
+                    bx = robot.x + robot.w if robot.facing_right else robot.x - 18
+                    by = robot.y + robot.h // 2 - 2
+                    bolts.append(Bolt(bx, by, direction))
                 elif state == ST_MENU:
                     if pygame.K_1 <= event.key <= pygame.K_6:
                         lvl = event.key - pygame.K_1
@@ -1187,12 +1369,55 @@ def main():
             # Camera follows robot
             cam_x = max(0, min(int(robot.x - W // 2 + robot.w // 2), current_world_w - W))
             
+            # Update viruses and bolts
+            for v in viruses:
+                v.update()
+            for bl in bolts:
+                bl.update(current_world_w)
+            bolts[:] = [bl for bl in bolts if bl.alive]
+            if boss:
+                boss.update(platforms)
+
+            # Bolt hits virus
+            for bl in bolts:
+                for v in viruses[:]:
+                    if bl.rect.colliderect(v.rect):
+                        bl.alive = False
+                        viruses.remove(v)
+                        for _ in range(8):
+                            particles.append(Particle(v.rect.centerx, v.rect.centery, "spark"))
+                        break
+
+            # Bolt hits boss
+            if boss:
+                for bl in bolts:
+                    if bl.alive and bl.rect.colliderect(boss.rect):
+                        if boss.hit():
+                            bl.alive = False
+                            for _ in range(6):
+                                particles.append(Particle(boss.rect.centerx, boss.rect.centery, "spark"))
+                if boss.dead_flag:
+                    for g in gates:
+                        if g.switch_id == 999:
+                            g.is_open = True
+                    for _ in range(20):
+                        particles.append(Particle(boss.rect.centerx, boss.rect.centery, "ember"))
+                    boss = None
+
             player_rect = robot.rect
             for h in hazards:
                 if player_rect.colliderect(h.rect):
                     # DEATH
                     load_level(current_level)
                     break
+
+            # Virus / boss contact = death
+            for v in viruses:
+                if player_rect.colliderect(v.rect):
+                    load_level(current_level)
+                    break
+            if boss and player_rect.colliderect(boss.rect):
+                load_level(current_level)
 
             #check if any box is on a hazard
             for b in boxes :
@@ -1353,6 +1578,13 @@ def main():
 
             robot.draw(gs, cam_x)
 
+            for v in viruses:
+                v.draw(gs, cam_x)
+            for bl in bolts:
+                bl.draw(gs, cam_x)
+            if boss:
+                boss.draw(gs, cam_x, frame)
+
             if state == ST_INTRO and frame < 60:
                 beam = pygame.Surface((W, H), pygame.SRCALPHA)
                 cx = robot.x + robot.w // 2
@@ -1375,8 +1607,11 @@ def main():
                 hint_text = hint_font.render(current_level_data.get("hint", ""), True, (70, 75, 90))
                 gs.blit(hint_text, (16, 32))
                 # Controls
-                ctrl = hint_font.render("r restart  //  esc menu", True, (40, 42, 55))
+                ctrl = hint_font.render("r restart  //  f shoot  //  esc menu", True, (40, 42, 55))
                 gs.blit(ctrl, (W - ctrl.get_width() - 12, 12))
+                if boss:
+                    btag = hint_font.render(f"BOSS  {boss.hp}/{Boss.MAX_HP}", True, (220, 50, 50))
+                    gs.blit(btag, (W // 2 - btag.get_width() // 2, 12))
 
         gs.blit(fog_top, (0, 0))
         gs.blit(scanlines, (0, 0))
