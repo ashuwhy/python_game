@@ -20,7 +20,7 @@ def create_display(fullscreen):
         return pygame.display.set_mode((INTERNAL_W, INTERNAL_H), pygame.RESIZABLE)
 
 screen = create_display(FULLSCREEN)
-pygame.display.set_caption("VOLT")
+pygame.display.set_caption("VOLITAL")
 clock = pygame.time.Clock()
 FPS = 60
 
@@ -288,40 +288,93 @@ class Box:
                     self.vy = 0
 
 
-# ── Virus ────────────────────────────────────────────────────────
+# ── MechaVirus ───────────────────────────────────────────────────
 class Virus:
+    """Virus piloting a mech suit. 2 HP — first hit breaks armor, second kills."""
     def __init__(self, x, y, left, right):
         self.x = float(x)
-        self.y = float(y)   # top of sprite
-        self.w, self.h = 22, 20
+        self.y = float(y)
+        self.w, self.h = 36, 40
         self.left, self.right = float(left), float(right)
-        self.vx = 1.2
+        self.vx = 1.4
         self.frame = 0
+        self.hp = 2
+        self.armor_broken = False
+        self.hurt_timer = 0
+        self.shoot_timer = 0
 
     @property
     def rect(self):
         return pygame.Rect(int(self.x), int(self.y), self.w, self.h)
 
-    def update(self):
+    def update(self, player_x=0):
+        """Move and return any EnemyBolts fired."""
         self.frame += 1
+        if self.hurt_timer > 0:
+            self.hurt_timer -= 1
         self.x += self.vx
         if self.x <= self.left or self.x + self.w >= self.right:
             self.vx *= -1
             self.x = max(self.left, min(self.x, self.right - self.w))
+        # Shoot at player if in range
+        self.shoot_timer += 1
+        dist = abs(player_x - (self.x + self.w / 2))
+        if dist < 250 and self.shoot_timer >= 120:
+            self.shoot_timer = 0
+            direction = 1 if player_x > self.x + self.w / 2 else -1
+            bx = self.x + self.w if direction > 0 else self.x - 14
+            return [EnemyBolt(bx, self.y + self.h // 2 - 2, direction)]
+        return []
+
+    def hit(self):
+        if self.hurt_timer == 0:
+            self.hp -= 1
+            self.hurt_timer = 30
+            if self.hp <= 1:
+                self.armor_broken = True
+            return True
+        return False
 
     def draw(self, surface, cam_x):
         rx = int(self.x - cam_x)
         ry = int(self.y)
         cx, cy = rx + self.w // 2, ry + self.h // 2
         pulse = (math.sin(self.frame * 0.15) + 1) / 2
-        r = int(10 + 2 * pulse)
-        pygame.draw.circle(surface, (150, 15, 210), (cx, cy), r)
-        pygame.draw.circle(surface, (195, 55, 255), (cx, cy), r - 3)
-        pygame.draw.rect(surface, (255, 240, 0), (cx - 6, cy - 3, 4, 4))
-        pygame.draw.rect(surface, (255, 240, 0), (cx + 2, cy - 3, 4, 4))
-        tip_x = cx + (4 if self.vx > 0 else -4)
-        pygame.draw.line(surface, (195, 55, 255), (cx, ry), (tip_x, ry - 7), 2)
-        pygame.draw.circle(surface, (255, 100, 255), (tip_x, ry - 7), 3)
+        hurt = self.hurt_timer > 0
+        # Mech legs (animated)
+        leg_phase = (self.frame // 8) % 2
+        leg_col = (100, 100, 110) if not self.armor_broken else (80, 60, 60)
+        if leg_phase == 0:
+            pygame.draw.rect(surface, leg_col, (rx + 6, ry + 30, 6, 10))
+            pygame.draw.rect(surface, leg_col, (rx + 24, ry + 32, 6, 8))
+        else:
+            pygame.draw.rect(surface, leg_col, (rx + 6, ry + 32, 6, 8))
+            pygame.draw.rect(surface, leg_col, (rx + 24, ry + 30, 6, 10))
+        # Mech body
+        body_col = (70, 75, 85) if not self.armor_broken else (50, 30, 30)
+        if hurt:
+            body_col = (255, 150, 80)
+        pygame.draw.rect(surface, body_col, (rx + 4, ry + 10, 28, 22))
+        pygame.draw.rect(surface, (90, 95, 105) if not self.armor_broken else (70, 40, 40),
+                         (rx + 4, ry + 10, 28, 22), 1)
+        # Cockpit window — virus inside
+        pygame.draw.rect(surface, (40, 10, 60), (rx + 10, ry + 13, 16, 12))
+        v_r = int(5 + pulse)
+        pygame.draw.circle(surface, (150, 15, 210), (cx, ry + 18), v_r)
+        pygame.draw.circle(surface, (195, 55, 255), (cx, ry + 18), v_r - 2)
+        # Virus eyes
+        pygame.draw.rect(surface, (255, 240, 0), (cx - 3, ry + 16, 2, 2))
+        pygame.draw.rect(surface, (255, 240, 0), (cx + 1, ry + 16, 2, 2))
+        # Mech antenna
+        tip_x = cx + (3 if self.vx > 0 else -3)
+        pygame.draw.line(surface, (150, 160, 180), (cx, ry + 10), (tip_x, ry + 2), 2)
+        pygame.draw.circle(surface, (255, 100, 100) if self.armor_broken else (100, 200, 255),
+                           (tip_x, ry + 2), 2)
+        # Sparks when armor broken
+        if self.armor_broken and random.random() < 0.3:
+            sx = rx + random.randint(4, 32)
+            sy = ry + random.randint(10, 30)
+            pygame.draw.rect(surface, (255, 200, 50), (sx, sy, 2, 2))
 
 
 # ── Bolt ─────────────────────────────────────────────────────────
@@ -357,6 +410,7 @@ class Bolt:
 # ── Boss ─────────────────────────────────────────────────────────
 class Boss:
     MAX_HP = 6
+    ST_PATROL, ST_CHASE, ST_CHARGE, ST_STOMP = 0, 1, 2, 3
 
     def __init__(self, x, y, left, right):
         self.x = float(x)
@@ -369,15 +423,54 @@ class Boss:
         self.hurt_timer = 0
         self.frame = 0
         self.dead_flag = False
+        self.state = Boss.ST_PATROL
+        self.charge_timer = 0
+        self.stomp_timer = 0
+        self.shockwave = None  # (x, y, w, h, ttl)
+        self.shoot_timer = 0
 
     @property
     def rect(self):
         return pygame.Rect(int(self.x), int(self.y), self.w, self.h)
 
-    def update(self, platforms):
+    def update(self, platforms, player_x=0):
+        """AI-driven update. Returns list of EnemyBolts."""
         self.frame += 1
         if self.hurt_timer > 0:
             self.hurt_timer -= 1
+        self.charge_timer += 1
+        self.shoot_timer += 1
+
+        dist = abs(player_x - (self.x + self.w / 2))
+        direction = 1 if player_x > self.x + self.w / 2 else -1
+
+        # Shockwave decay
+        if self.shockwave:
+            self.shockwave = (self.shockwave[0], self.shockwave[1],
+                              self.shockwave[2], self.shockwave[3],
+                              self.shockwave[4] - 1)
+            if self.shockwave[4] <= 0:
+                self.shockwave = None
+
+        # State machine
+        if self.state == Boss.ST_PATROL:
+            self.vx = 2.2 * (1 if self.vx > 0 else -1)
+            if dist < 300:
+                self.state = Boss.ST_CHASE
+        elif self.state == Boss.ST_CHASE:
+            self.vx = 3.5 * direction
+            if dist > 400:
+                self.state = Boss.ST_PATROL
+            if self.charge_timer >= 180:
+                self.state = Boss.ST_CHARGE
+                self.charge_timer = 0
+        elif self.state == Boss.ST_CHARGE:
+            self.vx = 7.0 * direction
+            if self.charge_timer >= 30:
+                self.state = Boss.ST_CHASE
+                self.charge_timer = 0
+
+        # Movement
         self.x += self.vx
         self.vy += 0.48
         self.y += self.vy
@@ -385,14 +478,28 @@ class Boss:
             self.x = self.left; self.vx = abs(self.vx)
         elif self.x + self.w >= self.right:
             self.x = self.right - self.w; self.vx = -abs(self.vx)
+
+        was_falling = self.vy > 2.0
         r = self.rect
         for p in platforms:
             if r.colliderect(p.rect) and self.vy > 0:
                 self.y = float(p.rect.top - self.h)
                 self.vy = -7.0
+                if was_falling and dist < 150:
+                    self.shockwave = (self.x - 40, GND - 10, self.w + 80, 10, 20)
         if self.y + self.h >= GND:
             self.y = float(GND - self.h)
+            if was_falling and dist < 150:
+                self.shockwave = (self.x - 40, GND - 10, self.w + 80, 10, 20)
             self.vy = -7.0
+
+        # Shoot during chase
+        bolts_out = []
+        if self.state == Boss.ST_CHASE and self.shoot_timer >= 90:
+            self.shoot_timer = 0
+            bx = self.x + self.w if direction > 0 else self.x - 14
+            bolts_out.append(EnemyBolt(bx, self.y + self.h // 2 - 2, direction))
+        return bolts_out
 
     def hit(self):
         if self.hurt_timer == 0:
@@ -409,19 +516,50 @@ class Boss:
         cx, cy = rx + self.w // 2, ry + self.h // 2
         pulse = (math.sin(frame * 0.07) + 1) / 2
         hurt = self.hurt_timer > 0
+        charging = self.state == Boss.ST_CHARGE
         r = int(28 + 4 * pulse)
-        pygame.draw.circle(surface, (255, 80, 40) if hurt else (160, 15, 210), (cx, cy), r)
-        pygame.draw.circle(surface, (255, 140, 100) if hurt else (205, 55, 255), (cx, cy), r - 7)
+        # Body color changes by state
+        if charging:
+            outer = (255, 40, 0)
+            inner = (255, 120, 40)
+        elif hurt:
+            outer = (255, 80, 40)
+            inner = (255, 140, 100)
+        else:
+            outer = (160, 15, 210)
+            inner = (205, 55, 255)
+        pygame.draw.circle(surface, outer, (cx, cy), r)
+        pygame.draw.circle(surface, inner, (cx, cy), r - 7)
         eye_y = cy - 6
         pygame.draw.rect(surface, (255, 255, 40), (cx - 14, eye_y, 9, 7))
         pygame.draw.rect(surface, (255, 255, 40), (cx + 5, eye_y, 9, 7))
         pygame.draw.line(surface, (255, 30, 30), (cx - 16, eye_y - 4), (cx - 7, eye_y), 2)
         pygame.draw.line(surface, (255, 30, 30), (cx + 6, eye_y), (cx + 15, eye_y - 4), 2)
+        # Charge trail
+        if charging:
+            trail_dir = -1 if self.vx > 0 else 1
+            for ti in range(3):
+                ta = max(0, 80 - ti * 30)
+                ts = pygame.Surface((12, 12), pygame.SRCALPHA)
+                pygame.draw.circle(ts, (255, 100, 0, ta), (6, 6), 6)
+                surface.blit(ts, (cx + trail_dir * (15 + ti * 14) - 6, cy - 6))
+        # HP bar
         bw = 70
         bx, by = cx - bw // 2, ry - 18
         pygame.draw.rect(surface, (30, 10, 10), (bx, by, bw, 8))
         pygame.draw.rect(surface, (220, 40, 40), (bx, by, int(bw * max(self.hp, 0) / Boss.MAX_HP), 8))
         pygame.draw.rect(surface, (180, 50, 50), (bx, by, bw, 8), 1)
+        # State label
+        state_names = ["PATROL", "CHASE", "CHARGE!", "STOMP"]
+        sl = pygame.font.SysFont("Courier", 10).render(state_names[self.state], True, (200, 200, 200))
+        surface.blit(sl, (cx - sl.get_width() // 2, by - 12))
+        # Shockwave
+        if self.shockwave:
+            sw_x, sw_y, sw_w, sw_h, sw_ttl = self.shockwave
+            sw_a = int(200 * (sw_ttl / 20))
+            sw_surf = pygame.Surface((sw_w, sw_h), pygame.SRCALPHA)
+            pygame.draw.rect(sw_surf, (255, 80, 0, sw_a), sw_surf.get_rect())
+            surface.blit(sw_surf, (int(sw_x - cam_x), int(sw_y)))
 
 
 # ── EnemyBolt ────────────────────────────────────────────────────
@@ -457,6 +595,7 @@ class EnemyBolt:
 # ── Boss2 ─────────────────────────────────────────────────────────
 class Boss2:
     MAX_HP = 10
+    ST_HUNT, ST_BARRAGE, ST_TELEPORT = 0, 1, 2
 
     def __init__(self, x, y, left, right):
         self.x = float(x)
@@ -470,16 +609,69 @@ class Boss2:
         self.frame = 0
         self.dead_flag = False
         self.shoot_timer = 0
+        self.state = Boss2.ST_HUNT
+        self.teleport_timer = 0
+        self.teleport_flash = 0  # visual effect countdown
+        self.rage_mode = False
 
     @property
     def rect(self):
         return pygame.Rect(int(self.x), int(self.y), self.w, self.h)
 
     def update(self, platforms, player_x):
-        """Move, bounce, and return any new EnemyBolts fired this frame."""
+        """AI-driven update. Returns list of EnemyBolts."""
         self.frame += 1
         if self.hurt_timer > 0:
             self.hurt_timer -= 1
+        if self.teleport_flash > 0:
+            self.teleport_flash -= 1
+        self.shoot_timer += 1
+        self.teleport_timer += 1
+
+        # Enter rage below 50% HP
+        if not self.rage_mode and self.hp <= Boss2.MAX_HP // 2:
+            self.rage_mode = True
+
+        speed_mult = 1.5 if self.rage_mode else 1.0
+        shoot_cd = 80 if self.rage_mode else 150
+        teleport_cd = 200 if self.rage_mode else 300
+        direction = 1 if player_x > self.x + self.w / 2 else -1
+
+        # Teleport timer
+        if self.teleport_timer >= teleport_cd and self.state == Boss2.ST_HUNT:
+            self.state = Boss2.ST_TELEPORT
+            self.teleport_timer = 0
+
+        bolts_out = []
+
+        if self.state == Boss2.ST_TELEPORT:
+            # Teleport to a random x within bounds
+            self.teleport_flash = 15
+            self.x = float(random.randint(int(self.left) + 50, int(self.right) - self.w - 50))
+            self.y = float(GND - self.h - random.randint(0, 100))
+            self.vy = 0
+            self.state = Boss2.ST_BARRAGE
+
+        elif self.state == Boss2.ST_BARRAGE:
+            # Fire a 3-bolt spread
+            bx = self.x + self.w if direction > 0 else self.x - 14
+            by_c = self.y + self.h // 2 - 2
+            bolts_out.append(EnemyBolt(bx, by_c, direction))
+            bolts_out.append(EnemyBolt(bx, by_c - 20, direction))
+            bolts_out.append(EnemyBolt(bx, by_c + 20, direction))
+            self.shoot_timer = 0
+            self.state = Boss2.ST_HUNT
+
+        elif self.state == Boss2.ST_HUNT:
+            # Chase player
+            self.vx = 3.0 * direction * speed_mult
+            # Single shot
+            if self.shoot_timer >= shoot_cd:
+                self.shoot_timer = 0
+                bx = self.x + self.w if direction > 0 else self.x - 14
+                bolts_out.append(EnemyBolt(bx, self.y + self.h // 2 - 2, direction))
+
+        # Movement
         self.x += self.vx
         self.vy += 0.48
         self.y += self.vy
@@ -495,13 +687,8 @@ class Boss2:
         if self.y + self.h >= GND:
             self.y = float(GND - self.h)
             self.vy = -8.5
-        self.shoot_timer += 1
-        if self.shoot_timer < 150:
-            return []
-        self.shoot_timer = 0
-        direction = 1 if player_x > self.x + self.w / 2 else -1
-        bx = self.x + self.w if direction > 0 else self.x - 14
-        return [EnemyBolt(bx, self.y + self.h // 2 - 2, direction)]
+
+        return bolts_out
 
     def hit(self):
         if self.hurt_timer == 0:
@@ -518,17 +705,55 @@ class Boss2:
         cx, cy = rx + self.w // 2, ry + self.h // 2
         pulse = (math.sin(frame * 0.09) + 1) / 2
         hurt = self.hurt_timer > 0
+        rage = self.rage_mode
+
+        # Teleport glitch effect
+        if self.teleport_flash > 0:
+            for _ in range(4):
+                gx = rx + random.randint(-20, self.w + 20)
+                gy = ry + random.randint(-10, self.h + 10)
+                gw = random.randint(10, 40)
+                pygame.draw.rect(surface, random.choice([(255, 0, 0), (0, 255, 255), (255, 255, 0)]),
+                                 (gx, gy, gw, 3))
+
         r = int(36 + 5 * pulse)
-        pygame.draw.circle(surface, (255, 100, 0) if hurt else (210, 20, 20), (cx, cy), r)
-        pygame.draw.circle(surface, (255, 160, 50) if hurt else (255, 55, 55), (cx, cy), r - 8)
-        for ex, ey_off in [(-16, -8), (7, -8), (-8, 7), (5, 7)]:
+        # Color based on state
+        if rage:
+            outer = (255, 40, 0) if not hurt else (255, 200, 100)
+            inner = (255, 80, 20) if not hurt else (255, 220, 150)
+        else:
+            outer = (255, 100, 0) if hurt else (210, 20, 20)
+            inner = (255, 160, 50) if hurt else (255, 55, 55)
+        pygame.draw.circle(surface, outer, (cx, cy), r)
+        pygame.draw.circle(surface, inner, (cx, cy), r - 8)
+
+        # Eyes — more for rage
+        eyes = [(-16, -8), (7, -8), (-8, 7), (5, 7)]
+        if rage:
+            eyes += [(-12, 0), (8, 0)]
+        for ex, ey_off in eyes:
             pygame.draw.circle(surface, (255, 255, 0), (cx + ex, cy + ey_off), 5)
             pygame.draw.circle(surface, (180, 0, 0), (cx + ex, cy + ey_off), 2)
+
+        # Rage aura
+        if rage:
+            aura = pygame.Surface((self.w + 20, self.h + 20), pygame.SRCALPHA)
+            aura_a = int(40 + 30 * pulse)
+            pygame.draw.circle(aura, (255, 50, 0, aura_a),
+                               (aura.get_width() // 2, aura.get_height() // 2), r + 8)
+            surface.blit(aura, (rx - 10, ry - 10))
+
+        # HP bar
         bw = 90
         bx2, by2 = cx - bw // 2, ry - 22
         pygame.draw.rect(surface, (30, 5, 5), (bx2, by2, bw, 9))
-        pygame.draw.rect(surface, (255, 30, 30), (bx2, by2, int(bw * max(self.hp, 0) / Boss2.MAX_HP), 9))
+        hp_col = (255, 30, 30) if not rage else (255, 100, 0)
+        pygame.draw.rect(surface, hp_col, (bx2, by2, int(bw * max(self.hp, 0) / Boss2.MAX_HP), 9))
         pygame.draw.rect(surface, (200, 50, 50), (bx2, by2, bw, 9), 1)
+        # State label
+        if rage:
+            rl = pygame.font.SysFont("Courier", 10).render("!! RAGE !!", True, (255, 80, 0))
+            surface.blit(rl, (cx - rl.get_width() // 2, by2 - 14))
 
 
 # ── Robot ───────────────────────────────────────────────────────
@@ -987,6 +1212,7 @@ def main():
     
     current_level = 0
     unlocked_level = 0
+    menu_cursor = 0
     intro_done = False
     
     platforms = []
@@ -1065,14 +1291,12 @@ def main():
                     by = robot.y + robot.h // 2 - 2
                     bolts.append(Bolt(bx, by, direction))
                 elif state == ST_MENU:
-                    if pygame.K_1 <= event.key <= pygame.K_6:
-                        lvl = event.key - pygame.K_1
-                        if lvl <= unlocked_level and lvl < len(LEVELS):
-                            current_level = lvl
-                            state = ST_TRANS
-                            overlay_alpha = 255.0
+                    if event.key == pygame.K_UP:
+                        menu_cursor = (menu_cursor - 1) % MAX_LEVELS
+                    elif event.key == pygame.K_DOWN:
+                        menu_cursor = (menu_cursor + 1) % MAX_LEVELS
                     elif event.key == pygame.K_RETURN:
-                        current_level = min(unlocked_level, MAX_LEVELS - 1)
+                        current_level = menu_cursor
                         state = ST_TRANS
                         overlay_alpha = 255.0
 
@@ -1123,26 +1347,30 @@ def main():
             
             # Update viruses and bolts
             for v in viruses:
-                v.update()
+                enemy_bolts += v.update(player_x=robot.x)
             for bl in bolts:
                 bl.update(current_world_w)
             bolts[:] = [bl for bl in bolts if bl.alive]
             if boss:
-                boss.update(platforms)
+                enemy_bolts += boss.update(platforms, player_x=robot.x)
             if boss2:
                 enemy_bolts += boss2.update(platforms, robot.x)
             for eb in enemy_bolts:
                 eb.update(current_world_w)
             enemy_bolts[:] = [eb for eb in enemy_bolts if eb.alive]
 
-            # Bolt hits virus
+            # Bolt hits virus (MechaVirus: 2 hits)
             for bl in bolts:
                 for v in viruses[:]:
                     if bl.rect.colliderect(v.rect):
                         bl.alive = False
-                        viruses.remove(v)
-                        for _ in range(8):
-                            particles.append(Particle(v.rect.centerx, v.rect.centery, "spark"))
+                        if v.hit():
+                            for _ in range(6):
+                                particles.append(Particle(v.rect.centerx, v.rect.centery, "spark"))
+                        if v.hp <= 0:
+                            viruses.remove(v)
+                            for _ in range(10):
+                                particles.append(Particle(v.rect.centerx, v.rect.centery, "ember"))
                         break
 
             # Bolt hits boss
@@ -1183,6 +1411,13 @@ def main():
                     # DEATH
                     load_level(current_level)
                     break
+
+            # Boss shockwave kills player
+            if boss and boss.shockwave:
+                sw_rect = pygame.Rect(int(boss.shockwave[0]), int(boss.shockwave[1]),
+                                      int(boss.shockwave[2]), int(boss.shockwave[3]))
+                if player_rect.colliderect(sw_rect):
+                    load_level(current_level)
 
             # Virus / boss contact = death
             for v in viruses:
@@ -1250,7 +1485,7 @@ def main():
                     dot_y = H//6 + dy * 20
                     pygame.draw.circle(gs, (255, 255, 255, dot_a) if (dx+dy)%3==0 else (40, 42, 55), (dot_x, dot_y), 2)
 
-            title = title_font.render("volt.", True, (230, 235, 245))
+            title = title_font.render("VOLITAL.", True, (230, 235, 245))
             gs.blit(title, (W//2 - title.get_width()//2, H//5 + 10))
             # Thin separator line
             line_y = H//5 + 60
@@ -1259,28 +1494,74 @@ def main():
             gs.blit(sub, (W//2 - sub.get_width()//2, line_y + 8))
 
             # ── level list ──
+            LEVEL_NAMES = [
+                "the basics",           # 1
+                "the unseen path",      # 2
+                "laser grid",           # 3
+                "mental acrobatics",    # 4
+                "the grand illusion",   # 5
+                "ghost run",            # 6
+                "dead weight",          # 7
+                "fading memory",        # 8
+                "signal lost",          # 9
+                "system error",         # 10
+                "broken bridge",        # 11
+                "phantom cargo",        # 12
+                "static noise",         # 13
+                "blind leap",           # 14
+                "corrupted path",       # 15
+                "voltage spike",        # 16
+                "dark transit",         # 17
+                "memory leak",          # 18
+                "the gauntlet",         # 19
+                "kernel panic",         # 20
+            ]
+            visible_levels = 5
+            scroll = max(0, min(menu_cursor - visible_levels // 2, MAX_LEVELS - visible_levels))
             start_y = H//2 - 20
-            for i in range(len(LEVELS)):
+            for i in range(scroll, min(scroll + visible_levels, MAX_LEVELS)):
                 unlocked = i <= unlocked_level
                 completed = i < unlocked_level
-                y = start_y + i * 34
-                # Dot indicator
-                dot_col = (0, 220, 255) if unlocked else (30, 32, 42)
-                if completed:
-                    dot_col = (80, 255, 120)
-                pygame.draw.circle(gs, dot_col, (W//2 - 170, y + 10), 4)
-                if completed:
-                    pygame.draw.circle(gs, (0, 0, 0), (W//2 - 170, y + 10), 2)
-                # Number
-                num_col = (80, 85, 100) if unlocked else (30, 32, 42)
-                num = hint_font.render(f"{i+1:02d}", True, num_col)
-                gs.blit(num, (W//2 - 155, y + 3))
-                # Separator dot
-                pygame.draw.circle(gs, (40, 42, 55), (W//2 - 130, y + 10), 2)
-                # Name
-                name_col = (180, 185, 200) if unlocked else (35, 38, 48)
-                name = font.render(LEVELS[i]["name"], True, name_col)
-                gs.blit(name, (W//2 - 118, y + 2))
+                y = start_y + (i - scroll) * 34
+                # Colors
+                if i == menu_cursor:
+                    text_col = None  # per-character laser below
+                elif completed:
+                    text_col = (80, 255, 120)
+                elif unlocked:
+                    text_col = (140, 145, 160)
+                else:
+                    text_col = (30, 32, 42)
+                # Build the display string
+                name_text = LEVEL_NAMES[i] if i < len(LEVEL_NAMES) else f"level {i+1}"
+                if i == menu_cursor:
+                    # Static brackets + glitching name
+                    bracket_col = (0, 220, 255)
+                    left_b = font.render("[  ", True, bracket_col)
+                    right_b = font.render("  ]", True, bracket_col)
+                    inner_str = f"{i+1:02d}  {name_text}"
+                    inner_surf = font.render(inner_str, True, bracket_col)
+                    iw, ih = inner_surf.get_size()
+                    total_w = left_b.get_width() + iw + right_b.get_width()
+                    cx = W // 2 - total_w // 2
+                    # Draw brackets (no glitch)
+                    gs.blit(left_b, (cx, y + 2))
+                    gs.blit(right_b, (cx + left_b.get_width() + iw, y + 2))
+                    # Draw name in glitched slices — sharp bar glitch
+                    inner_x = cx + left_b.get_width()
+                    slice_h = max(3, ih // 3)
+                    for sy in range(0, ih, slice_h):
+                        sh = min(slice_h, ih - sy)
+                        # Each slice gets a random offset that changes every 8 frames
+                        seed = frame // 8 + sy * 7
+                        random.seed(seed)
+                        offset_x = random.randint(-5, 5)
+                        random.seed()  # reset random state
+                        gs.blit(inner_surf, (inner_x + offset_x, y + 2 + sy),
+                                area=pygame.Rect(0, sy, iw, sh))
+                else:
+                    entry = font.render(f"  {i+1:02d}  {name_text}  ", True, text_col)
+                    gs.blit(entry, (W // 2 - entry.get_width() // 2, y + 2))
                 # Status text
                 if completed:
                     st = hint_font.render("done", True, (60, 180, 90))
@@ -1292,7 +1573,7 @@ def main():
                         gs.blit(st, (W//2 + 140, y + 3))
 
             # Bottom controls
-            ctrl = hint_font.render("1-6 select  //  enter continue  //  esc quit", True, (50, 52, 65))
+            ctrl = hint_font.render("up/down select  //  enter play  //  esc quit", True, (50, 52, 65))
             gs.blit(ctrl, (W//2 - ctrl.get_width()//2, H - 40))
             
         elif exit_portal is not None:
