@@ -39,11 +39,27 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller --onefile --noconsole --name volital-${{ matrix.suffix }} main.py
 
+      - name: Zip Artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Compress-Archive -Path dist\volital-${{ matrix.suffix }} -DestinationPath volital-windows.zip
+
+      - name: Zip Artifact (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          cd dist
+          zip -r ../volital-mac.zip volital-${{ matrix.suffix }}.app
+
+      - name: Zip Artifact (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cd dist
+          zip ../volital-linux.zip volital-${{ matrix.suffix }}
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: volital-${{ matrix.os_name }}
-          path: dist/volital-*
+          path: volital-*.zip
           retention-days: 1
 
   build-web:
@@ -92,20 +108,7 @@ jobs:
       - name: Prepare Release Assets
         run: |
           mkdir -p release_assets
-          # Move and Zip Mac
-          cd artifacts/volital-macOS
-          zip -r ../../release_assets/volital-mac.zip volital-mac
-          cd ../..
-          # Move and Zip Linux
-          cd artifacts/volital-Linux
-          zip -r ../../release_assets/volital-linux.zip volital-linux
-          cd ../..
-          # Windows is already an exe, but let's zip it too for consistency
-          cd artifacts/volital-Windows
-          zip -r ../../release_assets/volital-windows.zip volital-windows.exe
-          cd ../..
-          # Move Web
-          cp artifacts/volital-Web/volital-web.zip release_assets/
+          find ./artifacts -name "*.zip" -exec cp {} release_assets/ \;
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
