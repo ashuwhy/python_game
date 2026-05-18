@@ -4,6 +4,7 @@ import pygame
 import sys
 import random
 import math
+import asyncio
 
 # ── Initialize ──────────────────────────────────────────────────
 pygame.init()
@@ -1105,8 +1106,12 @@ class Hazard:
                 py = self.rect.y - random.randint(5, 20)
                 pygame.draw.rect(surface, (255, 100, 100), (rx + i, py, 2, 2))
 
-# ── City Background ─────────────────────────────
-def build_city_surface(width):
+# ── City Background (tileable) ──────────────────
+CITY_TILE_W = 800  # width of one tile — wraps seamlessly
+
+def build_city_surface():
+    """Build a tileable city background strip."""
+    width = CITY_TILE_W
     surf = pygame.Surface((width, H), pygame.SRCALPHA)
     layers = [
         (BLD_FAR,  -20, 60, 160, 220, 480, 5, 25,  WIN_DIM,   0.25),
@@ -1187,7 +1192,7 @@ def get_level(idx):
 
 
 # ── Main ────────────────────────────────────────────────────────
-def main():
+async def main():
     global screen, FULLSCREEN
 
     font = pygame.font.SysFont("Courier", 20)
@@ -1195,7 +1200,7 @@ def main():
     hint_font = pygame.font.SysFont("Courier", 16)
 
     sky_surf = build_sky_surface()
-    city_surf = build_city_surface(W)
+    city_surf = build_city_surface()
     fog_low = build_fog_surface(45)
     fog_top = build_fog_surface(20)
     scanlines = build_scanline_overlay()
@@ -1257,7 +1262,7 @@ def main():
         gates = [Gate(g["x"], g["y"], g["w"], g["h"], g["id"]) for g in data["gates"]]
         boxes = [Box(*b) for b in data["boxes"]]
         current_world_w = data.get("world_w", W)
-        city_surf = build_city_surface(int(current_world_w * 0.5) + W)
+        # city_surf is tileable, no need to rebuild
         cam_x = 0
         particles.clear()
         
@@ -1472,7 +1477,10 @@ def main():
         gs = game_surface
         gs.blit(sky_surf, (0, 0))
         if city_surf:
-            gs.blit(city_surf, (-int(cam_x * 0.5), 0))
+            # Infinite tiling parallax background
+            parallax_x = int(cam_x * 0.5) % CITY_TILE_W
+            gs.blit(city_surf, (-parallax_x, 0))
+            gs.blit(city_surf, (-parallax_x + CITY_TILE_W, 0))
         gs.blit(fog_low, (0, 0))
 
         if state == ST_MENU:
@@ -1702,9 +1710,10 @@ def main():
         screen.blit(scaled, (offset_x + sx_off, offset_y + sy_off))
 
         pygame.display.flip()
+        await asyncio.sleep(0)
 
     pygame.quit()
     sys.exit()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

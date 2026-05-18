@@ -1,0 +1,112 @@
+name: Build & Release VOLITAL
+
+on:
+  push:
+    tags:
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+
+jobs:
+  build-desktop:
+    name: Build Desktop Executable
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            suffix: linux
+            os_name: Linux
+          - os: windows-latest
+            suffix: windows.exe
+            os_name: Windows
+          - os: macos-latest
+            suffix: mac
+            os_name: macOS
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build with PyInstaller
+        run: pyinstaller --onefile --noconsole --name volital-${{ matrix.suffix }} main.py
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: volital-${{ matrix.os_name }}
+          path: dist/volital-*
+          retention-days: 1
+
+  build-web:
+    name: Build Web (WASM)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build with Pygbag
+        run: python -m pygbag --build .
+
+      - name: Zip Web Build
+        run: |
+          cd build/web
+          zip -r ../../volital-web.zip ./*
+
+      - name: Upload Web Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: volital-Web
+          path: volital-web.zip
+          retention-days: 1
+
+  release:
+    name: Create GitHub Release
+    needs: [build-desktop, build-web]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Prepare Release Assets
+        run: |
+          mkdir -p release_assets
+          # Move and Zip Mac
+          cd artifacts/volital-macOS
+          zip -r ../../release_assets/volital-mac.zip volital-mac
+          cd ../..
+          # Move and Zip Linux
+          cd artifacts/volital-Linux
+          zip -r ../../release_assets/volital-linux.zip volital-linux
+          cd ../..
+          # Windows is already an exe, but let's zip it too for consistency
+          cd artifacts/volital-Windows
+          zip -r ../../release_assets/volital-windows.zip volital-windows.exe
+          cd ../..
+          # Move Web
+          cp artifacts/volital-Web/volital-web.zip release_assets/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release_assets/*
+          generate_release_notes: true
