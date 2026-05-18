@@ -1157,7 +1157,7 @@ def build_scanline_overlay():
     return s
 
 from levels_1_9   import LEVELS, DifficultyProfile, _pick_template
-from levels_10_18 import tmpl_boss
+from levels_10_18 import tmpl_boss, generate_level_10_18
 from levels_19_20 import tmpl_gauntlet, tmpl_final_boss
 
 # ── Physics / ground reference ───────────────────────────────────
@@ -1170,6 +1170,7 @@ GND = H - 50  # y of ground surface — also defined locally in each level file
 def generate_level(n):
     """Return a level dict for 1-based level index n (call with n >= 6)."""
     if n == 10: return tmpl_boss(DifficultyProfile(n))
+    if 11 <= n <= 18: return generate_level_10_18(n, DifficultyProfile(n))
     if n == 19: return tmpl_gauntlet(DifficultyProfile(n))
     if n == 20: return tmpl_final_boss(DifficultyProfile(n))
     return _pick_template(n)(DifficultyProfile(n))
