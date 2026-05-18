@@ -1033,6 +1033,9 @@ def generate_level(n):
     return _pick_template(n)(DifficultyProfile(n))
 
 
+MAX_LEVELS = 20
+
+
 def get_level(idx):
     """0-based index. Returns handcrafted level for idx < len(LEVELS), generated for idx >= len(LEVELS)."""
     if idx < len(LEVELS):
@@ -1081,9 +1084,12 @@ def main():
     cam_x = 0
     current_world_w = W
 
+    current_level_data = {}
+
     def load_level(idx):
-        nonlocal platforms, memory_platforms, hazards, switches, gates, boxes, robot, exit_portal, cam_x, current_world_w
-        data = LEVELS[idx]
+        nonlocal platforms, memory_platforms, hazards, switches, gates, boxes, robot, exit_portal, cam_x, current_world_w, current_level_data
+        data = get_level(idx)
+        current_level_data = data
         robot = Robot(*data["robot"])
         robot.awake = True
         robot.eye_brightness = 1.0
@@ -1132,7 +1138,7 @@ def main():
                             state = ST_TRANS
                             overlay_alpha = 255.0
                     elif event.key == pygame.K_RETURN:
-                        current_level = min(unlocked_level, len(LEVELS) - 1)
+                        current_level = min(unlocked_level, MAX_LEVELS - 1)
                         state = ST_TRANS
                         overlay_alpha = 255.0
 
@@ -1205,7 +1211,7 @@ def main():
 
             if exit_portal and robot.rect.colliderect(exit_portal.rect):
                 unlocked_level = max(unlocked_level, current_level + 1)
-                if current_level + 1 < len(LEVELS):
+                if current_level + 1 < MAX_LEVELS:
                     current_level += 1
                     state = ST_TRANS
                     overlay_alpha = 255.0
@@ -1362,11 +1368,11 @@ def main():
             # ── nothing-style HUD ──
             if state == ST_PLAY:
                 # Level tag
-                tag = f"{current_level+1:02d} // {LEVELS[current_level]['name']}"
+                tag = f"{current_level+1:02d} // {current_level_data['name']}"
                 lvl_text = font.render(tag, True, (140, 145, 160))
                 gs.blit(lvl_text, (16, 12))
                 # Hint
-                hint_text = hint_font.render(LEVELS[current_level].get("hint", ""), True, (70, 75, 90))
+                hint_text = hint_font.render(current_level_data.get("hint", ""), True, (70, 75, 90))
                 gs.blit(hint_text, (16, 32))
                 # Controls
                 ctrl = hint_font.render("r restart  //  esc menu", True, (40, 42, 55))
