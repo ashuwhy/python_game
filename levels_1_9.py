@@ -54,16 +54,17 @@ LEVELS = [
         "platforms": [
             (0,    GND, 200, 70),
             (300,  GND - 65,  100, 14),
-            (500,  GND - 130, 100, 14),
+            (500,  GND - 65,  100, 14),
             (800,  GND, 300, 70),
-            (1200, GND - 65,  120, 14),
+            (1180, GND - 60,  100, 14),
+            (1360, GND - 40,  100, 14),
             (1500, GND, 500, 70),
         ],
-        "memory_platforms": [(680, GND - 60, 80, 14)],
+        "memory_platforms": [(680, GND - 50, 80, 14)],
         "hazards": [
             (200,  GND - 20,  600, 20),
             (1100, GND - 20,  400, 20),
-            (650,  GND - 180,  20, 100),
+            (650,  GND - 130,  20, 60),
         ],
         "switches": [
             {"x": 850, "y": GND - 8, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"},
@@ -84,12 +85,13 @@ LEVELS = [
             (2000, GND, 400, 70),
         ],
         "memory_platforms": [
-            (450,  GND - 40,  100, 14),
-            (700,  GND - 80,  100, 14),
-            (950,  GND - 120, 100, 14),
-            (1200, GND - 80,  100, 14),
-            (1450, GND - 40,  100, 14),
-            (1700, GND,       100, 14),
+            (420,  GND - 40,  110, 14),
+            (650,  GND - 75,  110, 14),
+            (900,  GND - 75,  110, 14),
+            (1150, GND - 40,  110, 14),
+            (1400, GND - 40,  110, 14),
+            (1650, GND - 20,  110, 14),
+            (1870, GND - 10,  110, 14),
         ],
         "hazards": [(350, GND - 20, 1650, 20)],
         "switches": [
@@ -108,29 +110,33 @@ LEVELS = [
         "exit": (3540, GND),
         "platforms": [
             (0,    GND, 400, 70),
-            (1000, GND - 100, 200, 14),
+            (1000, GND - 80, 200, 14),
             (2200, GND, 300, 70),
             (3200, GND, 400, 70),
         ],
         "memory_platforms": [
-            (450,  GND - 40,  80, 14),
-            (600,  GND - 80,  80, 14),
-            (750,  GND - 120, 80, 14),
-            (1300, GND - 120, 80, 14),
-            (1500, GND - 80,  80, 14),
-            (1700, GND - 40,  80, 14),
-            (1900, GND,       80, 14),
-            (2600, GND - 60,  80, 14),
-            (2800, GND - 120, 80, 14),
-            (3000, GND - 60,  80, 14),
+            (450,  GND - 35,  90, 14),
+            (600,  GND - 70,  90, 14),
+            (760,  GND - 70,  90, 14),
+            (930,  GND - 35,  90, 14),
+            (1300, GND - 70,  90, 14),
+            (1460, GND - 35,  90, 14),
+            (1620, GND - 35,  90, 14),
+            (1780, GND - 10,  90, 14),
+            (1940, GND - 10,  90, 14),
+            (2090, GND - 10,  90, 14),
+            (2600, GND - 35,  90, 14),
+            (2750, GND - 35,  90, 14),
+            (2920, GND - 10,  90, 14),
+            (3080, GND - 10,  90, 14),
         ],
         "hazards": [
             (400,  GND - 20,  1800, 20),
             (2500, GND - 20,   700, 20),
-            (850,  GND - 200,   20, 150),
-            (1250, GND - 200,   20, 80),
-            (1600, GND - 200,   20, 120),
-            (2900, GND - 200,   20, 80),
+            (850,  GND - 130,   20, 60),
+            (1250, GND - 120,   20, 50),
+            (1600, GND - 120,   20, 50),
+            (2900, GND - 120,   20, 50),
         ],
         "switches": [
             {"x": 1050, "y": GND - 108, "w": 44, "h": 8, "id": 1, "timed": 0, "type": "plate"},
@@ -188,7 +194,7 @@ def tmpl_navigation(p):
     hz_w    = p.world_w - safe_w * 2
     count   = max(4, int(hz_w / (p.gap_max_px + 45)) + 1)
     spacing = hz_w / (count + 1)
-    heights = [GND - 40, GND - 80, GND - 120, GND - 80]
+    heights = [GND - 35, GND - 70, GND - 70, GND - 35]
     mem_plats = [
         (int(hz_x + spacing * (i + 1)) - 45, heights[i % 4], 90, 14)
         for i in range(count)
@@ -197,13 +203,13 @@ def tmpl_navigation(p):
     mid_x = p.world_w // 2 - 80
     plats = [
         (0,              GND, safe_w, 70),
-        (mid_x,          GND - 180, 160, 14),  # elevated lookout
+        (mid_x,          GND - 80, 160, 14),  # elevated lookout
         (p.world_w - safe_w, GND, safe_w, 70),
     ]
     # Vertical hazard walls creating corridors
     vert_hazards = []
     if p.n >= 7:
-        vert_hazards.append((mid_x + 160, GND - 220, 16, 170))
+        vert_hazards.append((mid_x + 160, GND - 130, 16, 80))
     hazards = [(hz_x, GND - 20, hz_w, 20)] + vert_hazards
     # MechaViruses on safe zones
     virus_count = min(p.n - 4, 3)
@@ -211,7 +217,7 @@ def tmpl_navigation(p):
     if virus_count >= 1:
         virus_list.append((p.world_w - safe_w + 30, GND - 40, p.world_w - safe_w + 10, p.world_w - 20))
     if virus_count >= 2:
-        virus_list.append((mid_x + 20, GND - 180 - 40, mid_x, mid_x + 160))
+        virus_list.append((mid_x + 20, GND - 80 - 40, mid_x, mid_x + 160))
     return {
         "name":  f"ghost run {p.n}",
         "hint":  _HINTS_NAV[p.n % len(_HINTS_NAV)],
@@ -240,7 +246,7 @@ def tmpl_box_puzzle(p):
     plats = [
         (0,       GND, left_w,  70),
         (mid_x,   GND, mid_w,   70),
-        (mid_x + 60, GND - 120, 100, 14),  # elevated shelf
+        (mid_x + 60, GND - 80, 100, 14),  # elevated shelf
         (right_x, GND, right_w, 70),
     ]
     hazards = [
@@ -291,7 +297,7 @@ def tmpl_memory_traverse(p):
     # Memory platforms for first half
     count1  = max(3, int(hz_w / (p.gap_max_px + 45)) + 1)
     spacing1 = hz_w / (count1 + 1)
-    heights = [GND - 50, GND - 90, GND - 130, GND - 90]
+    heights = [GND - 35, GND - 70, GND - 70, GND - 35]
     mem1 = [
         (int(hz_x + spacing1 * (i + 1)) - 45, heights[i % 4], 90, 14)
         for i in range(count1)
@@ -306,7 +312,7 @@ def tmpl_memory_traverse(p):
     plats = [
         (0,                  GND, safe_w, 70),
         (island_x,           GND, island_w, 70),
-        (island_x + 30,      GND - 130, 100, 14),  # elevated on island
+        (island_x + 30,      GND - 80, 100, 14),  # elevated on island
         (p.world_w - safe_w, GND, safe_w, 70),
     ]
     hazards = [
@@ -345,7 +351,7 @@ def tmpl_combo(p):
     hz_w    = p.world_w - safe_w * 2
     count   = max(4, int(hz_w / (p.gap_max_px + 50)) + 1)
     spacing = hz_w / (count + 1)
-    heights = [GND - 50, GND - 90, GND - 130, GND - 90]
+    heights = [GND - 35, GND - 70, GND - 70, GND - 35]
     mem_plats = [
         (int(hz_x + spacing * (i + 1)) - 50, heights[i % 4], 100, 14)
         for i in range(count)
@@ -353,23 +359,23 @@ def tmpl_combo(p):
     # Multi-height elevated platforms
     plats = [
         (0,                  GND, safe_w, 70),
-        (safe_w + 100,       GND - 160, 120, 14),  # high perch
-        (p.world_w // 2 - 60, GND - 200, 120, 14), # center high
-        (p.world_w - safe_w - 150, GND - 140, 120, 14),  # pre-exit high
+        (safe_w + 100,       GND - 80, 120, 14),  # high perch
+        (p.world_w // 2 - 60, GND - 80, 120, 14), # center high
+        (p.world_w - safe_w - 150, GND - 80, 120, 14),  # pre-exit high
         (p.world_w - safe_w, GND, safe_w, 70),
     ]
     hazards = [(hz_x, GND - 20, hz_w, 20)]
     # Vertical hazards creating corridors
     if p.n >= 8:
-        hazards.append((p.world_w // 2 - 8, GND - 250, 16, 140))
+        hazards.append((p.world_w // 2 - 8, GND - 130, 16, 80))
     if p.n >= 9:
-        hazards.append((p.world_w - safe_w - 160, GND - 200, 16, 100))
+        hazards.append((p.world_w - safe_w - 160, GND - 130, 16, 80))
     # More MechaViruses at higher levels
     virus_list = []
     if p.n >= 8:
         virus_list.append((p.world_w - safe_w + 40, GND - 40, p.world_w - safe_w + 10, p.world_w - 70))
     if p.n >= 9:
-        virus_list.append((safe_w + 110, GND - 160 - 40, safe_w + 100, safe_w + 220))
+        virus_list.append((safe_w + 110, GND - 80 - 40, safe_w + 100, safe_w + 220))
     return {
         "name":  f"overload {p.n}",
         "hint":  _HINTS_COMBO[p.n % len(_HINTS_COMBO)],

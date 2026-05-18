@@ -14,19 +14,19 @@ def tmpl_boss(p):
         "exit":  (world_w - 60, GND),
         "platforms": [
             (0,    GND, world_w, 70),
-            (200,  GND - 120, 140, 14),
-            (500,  GND - 200, 140, 14),
-            (900,  GND - 260, 180, 14),
-            (1350, GND - 180, 140, 14),
-            (1600, GND - 120, 140, 14),
+            (200,  GND - 70, 140, 14),   # step 1
+            (420,  GND - 70, 140, 14),   # step 1b
+            (700,  GND - 70, 180, 14),   # center
+            (1100, GND - 70, 140, 14),   # step 1b
+            (1350, GND - 70, 140, 14),   # step 1
         ],
         "memory_platforms": [],
         "hazards":  [],
         "switches": [],
-        "gates": [{"x": world_w - 90, "y": GND - 220, "w": 16, "h": 220, "id": 999}],
+        "gates": [{"x": world_w - 90, "y": GND - 200, "w": 16, "h": 200, "id": 999}],
         "boxes":    [],
         "viruses":  [],
-        "boss": {"x": 800, "y": GND - 300, "left": 100, "right": 1700},
+        "boss": {"x": 800, "y": GND - 200, "left": 100, "right": 1700},
     }
 
 # ── Levels 11-18: enhanced templates with escalating complexity ──
@@ -38,10 +38,10 @@ def _make_level_11(p):
     base["hint"] = "walls of light block your path."
     # Add extra vertical hazards
     mid = p.world_w // 2
-    base["hazards"].append((mid, GND - 250, 16, 180))
-    base["hazards"].append((mid + 200, GND - 200, 16, 130))
+    base["hazards"].append((mid, GND - 130, 16, 80))
+    base["hazards"].append((mid + 200, GND - 120, 16, 70))
     # Add elevated platform between hazards
-    base["platforms"].append((mid + 40, GND - 160, 120, 14))
+    base["platforms"].append((mid + 40, GND - 80, 120, 14))
     return base
 
 def _make_level_12(p):
@@ -86,7 +86,7 @@ def _make_level_14(p):
     _r.seed(p.n * 777)
     for _ in range(extra):
         x = _r.randint(400, p.world_w - 400)
-        y = GND - _r.randint(40, 130)
+        y = GND - _r.randint(30, 80)
         base.setdefault("memory_platforms", []).append((x, y, 85, 14))
     _r.seed()
     return base
@@ -100,11 +100,11 @@ def _make_level_15(p):
     step = p.world_w // 6
     for i in range(1, 6):
         x = step * i
-        h = 100 + (i % 3) * 40
-        base["hazards"].append((x, GND - 200, 14, h))
+        h = 60 + (i % 3) * 20
+        base["hazards"].append((x, GND - 120, 14, h))
     # Add platforms between vertical walls
     for i in range(1, 5):
-        base["platforms"].append((step * i + 30, GND - 140, 100, 14))
+        base["platforms"].append((step * i + 30, GND - 80, 100, 14))
     return base
 
 def _make_level_16(p):
@@ -114,9 +114,9 @@ def _make_level_16(p):
     base["hint"] = "they guard the high ground."
     # Add elevated platforms with viruses on them
     elevations = [
-        (p.world_w // 4, GND - 180, 150, 14),
-        (p.world_w // 2, GND - 220, 150, 14),
-        (3 * p.world_w // 4, GND - 160, 150, 14),
+        (p.world_w // 4, GND - 80, 150, 14),
+        (p.world_w // 2, GND - 80, 150, 14),
+        (3 * p.world_w // 4, GND - 80, 150, 14),
     ]
     base["platforms"] += elevations
     vl = base.get("viruses", [])
@@ -138,8 +138,8 @@ def _make_level_17(p):
     vl.append((mid + 20, GND - 40, mid - 90, mid + 90))
     base["viruses"] = vl
     # Add vertical hazards flanking the center
-    base["hazards"].append((mid - 110, GND - 200, 14, 130))
-    base["hazards"].append((mid + 100, GND - 200, 14, 130))
+    base["hazards"].append((mid - 110, GND - 120, 14, 70))
+    base["hazards"].append((mid + 100, GND - 120, 14, 70))
     return base
 
 def _make_level_18(p):
